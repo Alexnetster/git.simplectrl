@@ -26,10 +26,10 @@ pub async fn serve(rx: Shared) {
     let app = Router::new()
         .route("/ws", get(ws_handler))
         .with_state(rx);
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8080")
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:8090")
         .await
         .unwrap();
-    println!("listening on ws://localhost:8080/ws");
+    println!("listening on ws://localhost:8090/ws");
     axum::serve(listener, app).await.unwrap();
 }
 

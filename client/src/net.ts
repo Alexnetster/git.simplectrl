@@ -4,7 +4,7 @@ export type Ball = { pos: Vec2 };
 export type GameState = { robots: Robot[]; ball: Ball; score: [number, number]; time: number };
 
 export function connect(onState: (s: GameState) => void): void {
-  const ws = new WebSocket("ws://localhost:8080/ws");
+  const ws = new WebSocket("ws://localhost:8090/ws");
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
     if (msg.t === "state") onState(msg.state as GameState);
