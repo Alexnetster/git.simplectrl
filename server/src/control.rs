@@ -1,7 +1,7 @@
 use crate::world::*;
 
 /// 인간/AI/스크립트 공용 인터페이스 (아키텍처 주춧돌)
-pub trait Controller {
+pub trait Controller: Send {
     fn decide(&mut self, view: &GameView) -> ControlOutput;
 }
 
