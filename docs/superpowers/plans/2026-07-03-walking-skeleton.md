@@ -39,31 +39,29 @@
 
 - [ ] **Step 1: Rust 프로젝트 생성**
 
-Run: `cd server && cargo init --name simplectrl_server`
-그리고 `server/Cargo.toml`에 의존성 추가:
+리포 루트에서 실행(디렉토리를 cargo가 생성):
+Run: `cargo new server --name simplectrl_server`
+그리고 `server/Cargo.toml`의 `[dependencies]`를 아래로 교체:
 ```toml
-[package]
-name = "simplectrl_server"
-version = "0.1.0"
-edition = "2021"
-
 [dependencies]
 tokio = { version = "1", features = ["full"] }
 axum = { version = "0.7", features = ["ws"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-futures = "0.3"
 ```
+> `futures`는 넣지 않는다 — axum 0.7 `WebSocket`은 `send`/`recv` 내장 메서드라 불필요. Task 7에서 `SinkExt`가 실제 필요하면 그때 추가.
 
 - [ ] **Step 2: 빌드 확인**
 
-Run: `cd server && cargo build`
-Expected: 성공(빈 main).
+Run: `cargo build --manifest-path server/Cargo.toml`
+Expected: 성공(기본 main). (최초 빌드는 크레이트 다운로드로 인터넷 필요)
 
 - [ ] **Step 3: 클라 프로젝트 생성**
 
-Run: `cd client && npm create vite@latest . -- --template vanilla-ts` (기존 파일 유지 선택), `npm install`
-Expected: `npm run dev`가 뜸.
+리포 루트에서 실행 — **`client` 디렉토리를 새로 생성**하므로 "비어있지 않은 디렉토리" 프롬프트가 없다(클로버 위험 회피):
+Run: `npm create vite@latest client -- --template vanilla-ts`
+Run: `cd client && npm install`
+Expected: `npm run dev`가 뜸(기본 http://localhost:5173).
 
 - [ ] **Step 4: Commit**
 
@@ -740,7 +738,7 @@ git commit -m "docs: walking skeleton done, kanban update [KB-10]"
 
 ## Self-Review 결과
 
-- **스펙 커버리지**: 결정적 sim([07 ADR-007]) ✅, Controller 추상화([00 §9]) ✅, 서버권위+브로드캐스트([02 §5]) ✅, 30Hz/보간준비([02]) — 보간은 Plan 2+에서(현재 최신 스냅샷 렌더). 월드 상수([02 §4.4]) ✅. 물리(rapier)·전투·파츠·제어모드·게임흐름·랭킹·NET SIM = **후속 Plan**.
+- **스펙 커버리지**: 결정적 sim([07 ADR-007]) ✅(단, `tick` 함수 자체는 결정적이며 리플레이/테스트는 이를 직접 호출; **라이브 루프는 `interval` 기반이라 스텝수가 벽시계에 좌우** → 엄밀 고정스텝 누산기와 골든 리플레이는 **Plan 2**에서 도입), Controller 추상화([00 §9]) ✅, 서버권위+브로드캐스트([02 §5]) ✅. **보간은 Plan 2+**(Plan 1은 최신 스냅샷 렌더 → 30Hz 계단현상 가능). 월드 상수([02 §4.4]) ✅. 물리(rapier)·전투·파츠·제어모드·게임흐름·랭킹·NET SIM·**골든 리플레이·클라 vitest** = **후속 Plan**.
 - **플레이스홀더 없음**: 모든 코드 단계에 실제 코드 포함.
 - **타입 일관성**: `GameState/RobotState/BallState/Vec2/ControlOutput/Controller/GameView` 명칭이 전 태스크에서 일치. 클라 `GameState` 필드는 서버 serde 출력과 대응(enum `Team`은 `"Blue"/"Red"` 문자열로 직렬화됨).
 
