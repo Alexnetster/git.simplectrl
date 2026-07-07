@@ -20,7 +20,24 @@ pub fn step(s: &mut GameState, controls: &[ControlOutput]) {
         r.pos.x += r.vel.x * DT;
         r.pos.y += r.vel.y * DT;
     }
+
+    let half_w = FIELD_W / 2.0;
+    let in_goal_mouth = s.ball.pos.y.abs() <= GOAL_W / 2.0;
+    if s.ball.pos.x > half_w && in_goal_mouth {
+        s.score.0 += 1;
+        reset_kickoff(s);
+    } else if s.ball.pos.x < -half_w && in_goal_mouth {
+        s.score.1 += 1;
+        reset_kickoff(s);
+    }
+
     s.time += DT;
+}
+
+fn reset_kickoff(s: &mut GameState) {
+    let fresh = GameState::new_kickoff();
+    s.robots = fresh.robots;
+    s.ball = fresh.ball;
 }
 
 #[cfg(test)]
@@ -66,5 +83,17 @@ mod tests {
         let before = s.robots[0].rot;
         step(&mut s, &ctrls);
         assert!(s.robots[0].rot != before);
+    }
+
+    #[test]
+    fn ball_past_right_goal_scores_for_blue_and_resets() {
+        let mut s = GameState::new_kickoff();
+        s.ball.pos = Vec2 {
+            x: FIELD_W / 2.0 + 0.1,
+            y: 0.0,
+        }; // 오른쪽 골 안
+        step(&mut s, &[ControlOutput::default(); 2]);
+        assert_eq!(s.score, (1, 0)); // Blue 득점
+        assert_eq!(s.ball.pos, Vec2 { x: 0.0, y: 0.0 }); // 킥오프 리셋
     }
 }
