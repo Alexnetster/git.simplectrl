@@ -1,4 +1,4 @@
-use crate::control::{ChaseBallAi, Controller};
+use crate::control::Controller;
 use crate::sim::step;
 use crate::world::*;
 
@@ -21,6 +21,7 @@ pub fn tick(state: &mut GameState, controllers: &mut [Box<dyn Controller>]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::control::ChaseBallAi;
 
     #[test]
     fn tick_advances_time_and_moves_ball_when_pushed() {

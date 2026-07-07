@@ -1,6 +1,7 @@
 use serde::Serialize;
 
 pub const FIELD_W: f32 = 12.0; // meters
+#[allow(dead_code)] // 클라 렌더 종횡비 / Plan 2에서 사용
 pub const FIELD_H: f32 = 8.0;
 pub const GOAL_W: f32 = 2.4;
 pub const DT: f32 = 1.0 / 60.0; // fixed timestep
