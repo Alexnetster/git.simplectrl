@@ -34,19 +34,28 @@ impl PhysicsWorld {
         let hw = FIELD_W / 2.0;
         let hh = FIELD_H / 2.0;
 
-        // 벽 4개 (고정)
-        for (hx, hy, x, y) in [
-            (hw, WALL_T, 0.0, hh),
-            (hw, WALL_T, 0.0, -hh),
-            (WALL_T, hh, hw, 0.0),
-            (WALL_T, hh, -hw, 0.0),
-        ] {
+        // 상/하 벽 (고정)
+        for (hx, hy, x, y) in [(hw, WALL_T, 0.0, hh), (hw, WALL_T, 0.0, -hh)] {
             colliders.insert(
                 ColliderBuilder::cuboid(hx, hy)
                     .translation(vector![x, y])
                     .restitution(RESTITUTION)
                     .build(),
             );
+        }
+
+        // 좌우 벽: 골 입구(y ∈ [−GOAL_W/2, GOAL_W/2])를 비운 위/아래 두 조각
+        for side in [hw, -hw] {
+            let seg = (hh - GOAL_W / 2.0) / 2.0; // 각 조각 반높이
+            let cy = GOAL_W / 2.0 + seg; // 조각 중심 y
+            for sy in [cy, -cy] {
+                colliders.insert(
+                    ColliderBuilder::cuboid(WALL_T, seg)
+                        .translation(vector![side, sy])
+                        .restitution(RESTITUTION)
+                        .build(),
+                );
+            }
         }
 
         // 공 (동적)
@@ -163,6 +172,13 @@ impl PhysicsWorld {
         self.bodies[self.ball].set_linvel(v, true);
     }
 
+    #[cfg(test)]
+    pub fn set_ball_for_test(&mut self, pos: Vector<Real>, vel: Vector<Real>) {
+        let b = &mut self.bodies[self.ball];
+        b.set_translation(pos, true);
+        b.set_linvel(vel, true);
+    }
+
     pub fn snapshot(&self) -> GameState {
         let b = &self.bodies[self.ball];
         let ball = BallState {
@@ -234,5 +250,35 @@ mod tests {
         assert!(s.time > 9.0);
         assert!(s.ball.pos.x.abs() <= FIELD_W / 2.0 + 0.5); // 벽 안(여유)
         assert!(s.ball.pos.y.abs() <= FIELD_H / 2.0 + 0.5);
+    }
+
+    #[test]
+    fn ball_driven_into_right_goal_scores_blue() {
+        let mut w = PhysicsWorld::new_kickoff();
+        w.kick_ball_for_test(vector![40.0, 0.0]); // 오른쪽으로 강하게
+        let mut scored = false;
+        for _ in 0..300 {
+            w.step(&[ControlOutput::default(); 2]);
+            if w.score.0 == 1 {
+                scored = true;
+                break;
+            }
+        }
+        assert!(scored, "공이 오른쪽 골로 들어가 Blue 득점해야 함");
+        // 득점 후 공은 킥오프로 리셋
+        assert!(w.snapshot().ball.pos.x.abs() < 0.1);
+    }
+
+    #[test]
+    fn ball_exiting_outside_goal_mouth_does_not_score() {
+        let mut w = PhysicsWorld::new_kickoff();
+        // 골 입구 밖(|y| > GOAL_W/2)에서 오른쪽 벽 쪽으로 밀어냄
+        let y = GOAL_W / 2.0 + 1.0;
+        w.set_ball_for_test(vector![FIELD_W / 2.0 - 1.0, y], vector![40.0, 0.0]);
+        for _ in 0..300 {
+            w.step(&[ControlOutput::default(); 2]);
+        }
+        // 골 입구 밖이라 벽에 막혀 무득점
+        assert_eq!(w.score, (0, 0), "골 입구 밖으로 나가면 무득점이어야 함");
     }
 }
