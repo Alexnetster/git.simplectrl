@@ -3,6 +3,7 @@ mod sim;
 mod control;
 mod loop_runner;
 mod net;
+mod physics;
 
 use control::{ChaseBallAi, Controller};
 use std::sync::Arc;
