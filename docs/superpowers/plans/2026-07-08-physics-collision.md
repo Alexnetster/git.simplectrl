@@ -8,7 +8,19 @@
 
 **Tech Stack:** rapier2d(핀 고정), nalgebra(rapier 재수출). 기존 tokio/axum/serde. 관련: [00 §12 전투는 Plan 3](../../00-개요-및-게임설계.md), [02 §4.4 월드 상수](../../02-네트워크-프로토콜.md), [07 ADR-002/007](../../07-결정기록-ADR.md), [09 AI](../../09-AI-설계.md).
 
-> **rapier API 주의:** rapier2d는 버전마다 시그니처가 변한다. **`Cargo.toml`에 버전을 핀 고정**(예: `rapier2d = { version = "0.22", features = ["enhanced-determinism"] }`)하고, 아래 코드가 컴파일 안 되면 **핀 버전의 docs.rs로 시그니처를 대조·조정**한다(이것은 플레이스홀더가 아니라 외부 라이브러리 통합의 정상 절차). 테스트는 불변식 기반이라 API 미세차이에 영향받지 않는다.
+> **rapier 버전 (착수 전 컴파일 프로브로 검증됨):** 아래 rapier 코드는 **0.22.0·0.26.1 모두 수정 없이 컴파일·실행**되며 결과가 byte-identical(프로브 확인). **`Cargo.toml`에 `rapier2d = { version = "0.26", features = ["enhanced-determinism"] }`로 핀 고정**(현 rustc 1.85에서 resolve되는 버전). **미핀 금지** — rustc≥1.86 환경에선 미검증 API의 0.34가 선택됨. `enhanced-determinism`은 크로스플랫폼 결정성용이라 [ADR-007](../../07-결정기록-ADR.md)(same-build)보다 넓지만 무해.
+
+## ⚠️ 착수 전 필수 반영 (드라이런 점검 결과 — 이 목록이 태스크 코드보다 우선)
+
+프로브 확인: rapier 코드는 0.22·0.26에서 **수정 없이 컴파일·실행**됨. 남은 건 배선/위생 5건:
+
+1. **버전 핀 = 0.26** (반영됨). 미핀 금지(rustc≥1.86 → 미검증 0.34 선택).
+2. **Task 4 — kinematic sim 은퇴 완결**: `main.rs`의 `mod sim;` 삭제 · `sim.rs` 삭제(또는 비움) · `world.rs`의 `BALL_FRICTION` 제거(dead-code 경고 방지, 리포는 warning-free 유지) · `loop_runner.rs`의 `use crate::sim::step;` 제거 · 기존 `loop_runner` 테스트 `tick_advances_time_and_moves_ball_when_pushed`와 `sim.rs` 테스트 4개는 **"유지"가 아니라 삭제/교체**.
+3. **Task 5 — imports**: `main.rs`에 `use tokio::time::Instant;` 추가, 기존 `interval(Duration::from_secs_f32(DT))` 구동 제거(누산기+~120Hz 프레임으로 교체).
+4. **Task 3 — 골 입구 벽 분리는 필수(선택 아님)**: 솔리드 좌우 벽이면 공이 튕겨 나와 **골이 절대 안 난다**(프로브 확인). 그래서 Task 2의 득점 테스트는 Task 3 적용 전까지 FAIL이 정상.
+5. **Task 2/3 — 음성 골 테스트 추가**: 공이 골 입구 밖(|y| > GOAL_W/2)으로 나가면 **무득점**임을 단언(골 mouth 조건 회귀 방지). `#[cfg(test)] fn set_ball_for_test(&mut self, pos, vel)` 헬퍼로 공 위치·속도 지정.
+
+*(enhanced-determinism은 ADR-007보다 넓은 크로스플랫폼 결정성 기능 — 무해하나 "크로스플랫폼 결정성이 목표"로 오인하지 말 것.)*
 
 ---
 
@@ -32,9 +44,9 @@
 
 `server/Cargo.toml [dependencies]`에 추가:
 ```toml
-rapier2d = { version = "0.22", features = ["enhanced-determinism"] }
+rapier2d = { version = "0.26", features = ["enhanced-determinism"] }
 ```
-Run: `cargo build --manifest-path server/Cargo.toml` (다운로드/컴파일, 인터넷 필요).
+Run: `cargo build --manifest-path server/Cargo.toml` (다운로드/컴파일, 인터넷 필요). 프로브 검증: 0.22·0.26 모두 빌드 OK.
 
 - [ ] **Step 2: 실패하는 테스트 — 월드가 기대 바디를 가진다**
 
