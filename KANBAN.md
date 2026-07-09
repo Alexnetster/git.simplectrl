@@ -18,8 +18,8 @@
 | Plan | 내용 | 문서 |
 |---|---|---|
 | **Plan 1 — 걷는 뼈대** ✅완료 | 결정적 sim + Controller + WS 30Hz + canvas + 골/스코어 | [계획](docs/superpowers/plans/2026-07-03-walking-skeleton.md) |
-| **Plan 2 — 물리/충돌(rapier2d)** ⭐다음 | 밀기 드리블·벽 반사·골 센서·누산기·리플레이 | [계획](docs/superpowers/plans/2026-07-08-physics-collision.md) |
-| Plan 3 — 전투/데미지/파츠 | 상호 데미지·부위HP·파손다운·넉백/스턴·로드아웃 | (예정) |
+| **Plan 2 — 물리/충돌(rapier2d)** ✅완료 | 밀기 드리블·벽 반사·골 센서·누산기·리플레이 | [계획](docs/superpowers/plans/2026-07-08-physics-collision.md) |
+| **Plan 3 — 전투/데미지/파츠** ⭐다음 | 상호 데미지·부위HP·파손다운·넉백/스턴·로드아웃 | (예정) |
 | Plan 4 — 제어 모드/입력 | 직접(키보드)·전략(마우스)·런타임 전환 | (예정) |
 | Plan 5 — 게임 흐름 | ATTRACT/SELECT/PLAYING/RESULT·슬롯 참가/인계 | (예정) |
 | Plan 6 — 랭킹 | 로봇별 승률 인메모리 | (예정) |
@@ -30,26 +30,30 @@
 
 ## Backlog
 
-**Plan 2 — 물리/충돌 (TDD 순서, [계획](docs/superpowers/plans/2026-07-08-physics-collision.md))**
-- [ ] KB-11 rapier2d 의존성 + 물리 월드(벽/공/로봇2) (테스트: 킥오프 월드·경계)
-- [ ] KB-12 물리 스텝 + 골 판정·리셋 (테스트: 경계 불변식·시간전진) [의존: KB-11]
-- [ ] KB-13 골 입구 벽 분리 + 라이브 득점 (테스트: 공 밀어넣어 득점) [의존: KB-12]
-- [ ] KB-14 tick가 PhysicsWorld 구동, kinematic sim 은퇴 (테스트: 밀면 공 이동) [의존: KB-13]
-- [ ] KB-15 고정스텝 누산기 + main/net 배선 (테스트: 스텝수/잔여 / 수동: 공 이동) [의존: KB-14]
-- [ ] KB-16 골든 리플레이 + 상태 해시 (테스트: 동일입력→동일해시) [의존: KB-15]
-- [ ] KB-17 E2E 검증 + 문서/KANBAN (전체 test PASS + 브라우저 골 확인) [의존: KB-16]
-
-> 걷는 뼈대에서 넘긴 항목은 위 카드에 흡수됨: 공 충돌(KB-13/14)·누산기(KB-15)·`rot` 래핑(KB-11 물리바디 각도)·골든 리플레이(KB-16). 클라 보간·포트 상수화·재연결은 Plan 3+ 또는 폴리싱.
-
 **Plan 3+** — 각 Plan 착수 시 writing-plans로 카드 추가.
 
+**Plan 3 인입 메모(Plan 2에서 넘긴 관찰)**
+- **대칭 AI-vs-AI는 평형** → 공이 중앙 근처 드리프트, 라이브 골이 잘 안 남. 신뢰성 있는 득점엔 **비대칭**(사람 조작=Plan 4, 난이도/스탯 차=Plan 3) 필요. 골 로직 자체는 유닛 검증됨.
+- 클라 보간(interpolation) — 아직 최신 스냅샷 렌더
+- 포트/URL 설정 상수화(8090 하드코딩 2곳), 클라 재연결/try-catch
+- (관찰) main publish가 프레임당 1회라 스톨 시 순간 <30Hz — 다운스트림 필요 시 보완
+
 ## Todo
-_(비어 있음 — Plan 2 착수 시 채움)_
+_(비어 있음 — Plan 3 착수 시 채움)_
 
 ## In Progress
 _(비어 있음)_
 
 ## Done
+**Plan 2 — 물리/충돌(rapier2d) ✅** (branch `feat/walking-skeleton`)
+- [x] KB-11 rapier2d 0.26 + 물리 월드(벽/공/로봇2)
+- [x] KB-12 물리 스텝 + 골 판정·리셋
+- [x] KB-13 골 입구 벽 분리 + 라이브 득점 로직
+- [x] KB-14 tick→PhysicsWorld, kinematic sim 은퇴 (+ KICKOFF 단일 소스)
+- [x] KB-15 고정스텝 누산기(+spiral cap) + main 배선
+- [x] KB-16 골든 리플레이 + 상태 해시 (#[cfg(test)])
+- [x] KB-17 검증: cargo test 11/11, WS E2E(공 물리 이동 확인). 대칭 AI라 라이브 골은 비대칭 필요
+
 **Plan 1 — 걷는 뼈대 ✅** (branch `feat/walking-skeleton`)
 - [x] KB-01 프로젝트 스캐폴딩 — server(cargo)·client(vite-ts)
 - [x] KB-02 월드 타입·상수
