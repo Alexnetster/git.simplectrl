@@ -1,5 +1,6 @@
 mod accumulator;
 mod world;
+mod combat;
 mod control;
 mod loop_runner;
 mod net;
