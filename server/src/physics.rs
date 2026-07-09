@@ -1,4 +1,4 @@
-use crate::parts::{default_stats, StatSet};
+use crate::parts::StatSet;
 use crate::world::*;
 use rapier2d::prelude::*;
 
@@ -31,7 +31,10 @@ pub struct PhysicsWorld {
 
 impl PhysicsWorld {
     /// 기본 스탯(기존 하드코딩 등가)으로 위임 — 기존 물리/골/tick 테스트 보존.
+    /// 실행 바이너리는 `new_kickoff_with`(프리셋 배정)를 쓰므로 테스트 전용.
+    #[cfg(test)]
     pub fn new_kickoff() -> Self {
+        use crate::parts::default_stats;
         Self::new_kickoff_with(
             [default_stats(), default_stats()],
             [String::new(), String::new()],

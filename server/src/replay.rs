@@ -2,6 +2,7 @@
 //! 릴리스 바이너리엔 포함되지 않으며, `run_headless`/`hash_state`는 테스트에서 소비된다.
 
 use crate::control::{ChaseBallAi, Controller};
+use crate::parts::{default_stats, StatSet};
 use crate::physics::PhysicsWorld;
 use crate::world::GameState;
 
@@ -20,14 +21,19 @@ pub fn hash_state(s: &GameState) -> u64 {
     h.finish()
 }
 
-/// 새 물리 월드 + 2 ChaseBallAi로 N 스텝 돌린 뒤 최종 스냅샷 해시. 결정적.
-pub fn run_headless(steps: u32) -> u64 {
-    let mut w = PhysicsWorld::new_kickoff();
+/// 로봇별 스탯을 받아 2 ChaseBallAi로 N 스텝 돌린 뒤 최종 스냅샷 해시. 결정적.
+pub fn run_headless_with(stats: [StatSet; 2], steps: u32) -> u64 {
+    let mut w = PhysicsWorld::new_kickoff_with(stats, [String::new(), String::new()]);
     let mut c: Vec<Box<dyn Controller>> = vec![Box::new(ChaseBallAi), Box::new(ChaseBallAi)];
     for _ in 0..steps {
         crate::loop_runner::tick(&mut w, &mut c);
     }
     hash_state(&w.snapshot())
+}
+
+/// 기본 스탯으로 위임. 결정적.
+pub fn run_headless(steps: u32) -> u64 {
+    run_headless_with([default_stats(), default_stats()], steps)
 }
 
 #[cfg(test)]
@@ -37,5 +43,16 @@ mod tests {
     #[test]
     fn same_inputs_same_hash_same_build() {
         assert_eq!(run_headless(600), run_headless(600));
+    }
+
+    #[test]
+    fn asymmetric_presets_diverge_from_symmetric() {
+        use crate::parts::{aggregate, catalog};
+        let cat = catalog();
+        let asym =
+            run_headless_with([aggregate(&cat, "striker"), aggregate(&cat, "guard")], 300);
+        let sym =
+            run_headless_with([aggregate(&cat, "striker"), aggregate(&cat, "striker")], 300);
+        assert_ne!(asym, sym, "비대칭 로드아웃은 대칭과 다른 경기 전개");
     }
 }

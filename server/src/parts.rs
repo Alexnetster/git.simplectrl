@@ -31,6 +31,8 @@ impl StatSet {
 
 /// 기존 하드코딩(THRUST=6/TURN_RATE=3)과 등가인 기본 스탯.
 /// mass는 콜라이더 밀도 유래 질량에 가산되므로 0=no-op(기존 거동 보존).
+/// 실행 바이너리는 프리셋 집계를 쓰므로(main) 현재 소비처는 테스트 경로뿐.
+#[cfg(test)]
 pub fn default_stats() -> StatSet {
     StatSet {
         max_speed: 10.0,
