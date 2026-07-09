@@ -19,8 +19,8 @@
 |---|---|---|
 | **Plan 1 — 걷는 뼈대** ✅완료 | 결정적 sim + Controller + WS 30Hz + canvas + 골/스코어 | [계획](docs/superpowers/plans/2026-07-03-walking-skeleton.md) |
 | **Plan 2 — 물리/충돌(rapier2d)** ✅완료 | 밀기 드리블·벽 반사·골 센서·누산기·리플레이 | [계획](docs/superpowers/plans/2026-07-08-physics-collision.md) |
-| **Plan 3a — 파츠/로드아웃/스탯** ⭐다음 | 파츠 조립·스탯→물리·카탈로그·비대칭 프리셋 | [계획](docs/superpowers/plans/2026-07-08-parts-loadout.md) |
-| Plan 3b — 전투/데미지 | 복합 콜라이더·상호 데미지·부위HP·파손다운·넉백/스턴 | (예정) |
+| **Plan 3a — 파츠/로드아웃/스탯** ✅완료 | 파츠 조립·스탯→물리·카탈로그·비대칭 프리셋 | [계획](docs/superpowers/plans/2026-07-08-parts-loadout.md) |
+| **Plan 3b — 전투/데미지** ⭐다음 | 복합 콜라이더·상호 데미지·부위HP·파손다운·넉백/스턴 | (예정) |
 | Plan 4 — 제어 모드/입력 | 직접(키보드)·전략(마우스)·런타임 전환 | (예정) |
 | Plan 5 — 게임 흐름 | ATTRACT/SELECT/PLAYING/RESULT·슬롯 참가/인계 | (예정) |
 | Plan 6 — 랭킹 | 로봇별 승률 인메모리 | (예정) |
@@ -31,28 +31,28 @@
 
 ## Backlog
 
-**Plan 3a — 파츠/로드아웃/스탯 (TDD 순서, [계획](docs/superpowers/plans/2026-07-08-parts-loadout.md))**
-- [ ] KB-18 파츠/스탯 카탈로그 + 로드아웃 집계 (테스트: 집계 합·프리셋 상이)
-- [ ] KB-19 물리에 로봇별 스탯 반영(accel/turn/maxSpeed/mass) (테스트: 가속 차→이동거리 차) [의존: KB-18]
-- [ ] KB-20 maxSpeed 클램프 검증 (테스트: 속도 상한) [의존: KB-19]
-- [ ] KB-21 catalog 다운링크 + 스냅샷 robot id (테스트: 직렬화) [의존: KB-18]
-- [ ] KB-22 main 비대칭 프리셋(striker/guard) + 헤드리스 검증 (테스트: 비대칭≠대칭) [의존: KB-19,21]
-- [ ] KB-23 검증 + 문서/KANBAN [의존: KB-22]
-
-> 스탯 비대칭이 생기면 Plan 2의 "대칭 AI 평형→라이브 골 안 남" 관찰이 완화됨.
-
 **Plan 3b+** — 각 Plan 착수 시 writing-plans로 카드 추가.
 
 **남은 관찰/부채 (후속)**
 - 클라 보간 — 아직 최신 스냅샷 렌더 / 포트·URL 상수화(8090×2), 클라 재연결·try-catch / main publish 프레임당 1회(스톨 시 순간 <30Hz) / 클라 vitest 미설정
+- (Plan 3a Minor) `apply_controls` 중복 가드·테스트명 정확성·aggregate slot 유니크 assert — 코스메틱, 여유 시
 
 ## Todo
-_(비어 있음 — Plan 3 착수 시 채움)_
+_(비어 있음 — Plan 3b 착수 시 채움)_
 
 ## In Progress
 _(비어 있음)_
 
 ## Done
+**Plan 3a — 파츠/로드아웃/스탯 ✅** (branch `feat/walking-skeleton`)
+- [x] KB-18 파츠/스탯 카탈로그 + 로드아웃 집계
+- [x] KB-19 물리에 로봇별 스탯 반영(accel/turn/maxSpeed/mass)
+- [x] KB-20 maxSpeed 클램프
+- [x] KB-21 catalog 다운링크 + 스냅샷 robot preset id
+- [x] KB-22 main 비대칭 프리셋(striker/guard) + 헤드리스 검증
+- [x] KB-23 검증: cargo test 17/17, 릴리스 warning 0, WS 비대칭 이동+catalog 확인
+
+**Plan 2 — 물리/충돌(rapier2d) ✅** (branch `feat/walking-skeleton`)
 **Plan 2 — 물리/충돌(rapier2d) ✅** (branch `feat/walking-skeleton`)
 - [x] KB-11 rapier2d 0.26 + 물리 월드(벽/공/로봇2)
 - [x] KB-12 물리 스텝 + 골 판정·리셋
