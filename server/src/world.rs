@@ -1,10 +1,13 @@
 use serde::Serialize;
 
 pub const FIELD_W: f32 = 12.0; // meters
-#[allow(dead_code)] // 클라 렌더 종횡비 / Plan 2에서 사용
 pub const FIELD_H: f32 = 8.0;
 pub const GOAL_W: f32 = 2.4;
 pub const DT: f32 = 1.0 / 60.0; // fixed timestep
+
+/// 킥오프 로봇 배치 (x, rot) — index 0 = Blue, 1 = Red. 단일 소스.
+/// physics(new_kickoff/reset_kickoff)와 GameState::new_kickoff가 공유한다.
+pub const KICKOFF: [(f32, f32); 2] = [(-3.0, 0.0), (3.0, std::f32::consts::PI)];
 
 #[derive(Clone, Copy, PartialEq, Debug, Serialize)]
 pub struct Vec2 {
@@ -55,21 +58,18 @@ pub struct ControlOutput {
 
 impl GameState {
     pub fn new_kickoff() -> Self {
+        let robots = KICKOFF
+            .iter()
+            .enumerate()
+            .map(|(i, &(x, rot))| RobotState {
+                id: if i == 0 { Team::Blue } else { Team::Red },
+                pos: Vec2 { x, y: 0.0 },
+                rot,
+                vel: Vec2 { x: 0.0, y: 0.0 },
+            })
+            .collect();
         GameState {
-            robots: vec![
-                RobotState {
-                    id: Team::Blue,
-                    pos: Vec2 { x: -3.0, y: 0.0 },
-                    rot: 0.0,
-                    vel: Vec2 { x: 0.0, y: 0.0 },
-                },
-                RobotState {
-                    id: Team::Red,
-                    pos: Vec2 { x: 3.0, y: 0.0 },
-                    rot: std::f32::consts::PI,
-                    vel: Vec2 { x: 0.0, y: 0.0 },
-                },
-            ],
+            robots,
             ball: BallState {
                 pos: Vec2 { x: 0.0, y: 0.0 },
                 vel: Vec2 { x: 0.0, y: 0.0 },

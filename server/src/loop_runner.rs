@@ -5,6 +5,11 @@ use crate::world::*;
 /// 한 tick: 각 컨트롤러 decide → physics step. (결정적)
 pub fn tick(world: &mut PhysicsWorld, controllers: &mut [Box<dyn Controller>]) {
     let snap = world.snapshot();
+    debug_assert_eq!(
+        controllers.len(),
+        snap.robots.len(),
+        "컨트롤러 수와 로봇 수가 일치해야 함 (controls[i] ↔ robots[i])"
+    );
     let outs: Vec<ControlOutput> = controllers
         .iter_mut()
         .enumerate()

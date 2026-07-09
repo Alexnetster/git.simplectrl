@@ -71,14 +71,16 @@ impl PhysicsWorld {
             &mut bodies,
         );
 
-        // 로봇 2대
+        // 로봇 2대 (배치는 world::KICKOFF 단일 소스)
         let mut robots = Vec::new();
-        for (x, rot) in [(-3.0f32, 0.0f32), (3.0, std::f32::consts::PI)] {
+        for &(x, rot) in KICKOFF.iter() {
             let rb = bodies.insert(
                 RigidBodyBuilder::dynamic()
                     .translation(vector![x, 0.0])
                     .rotation(rot)
                     .linear_damping(2.0)
+                    // 회전은 apply_controls에서 set_angvel(rate 제어)로 매 스텝 덮어써
+                    // angular_damping 효과는 사실상 미미 (조작감 튜닝 여지로만 유지).
                     .angular_damping(4.0)
                     .build(),
             );
@@ -153,12 +155,8 @@ impl PhysicsWorld {
         b.set_translation(vector![0.0, 0.0], true);
         b.set_linvel(vector![0.0, 0.0], true);
         b.set_angvel(0.0, true);
-        // 로봇
-        for (h, (x, rot)) in self
-            .robots
-            .iter()
-            .zip([(-3.0f32, 0.0f32), (3.0, std::f32::consts::PI)])
-        {
+        // 로봇 (배치는 world::KICKOFF 단일 소스)
+        for (h, (x, rot)) in self.robots.iter().zip(KICKOFF) {
             let rb = &mut self.bodies[*h];
             rb.set_translation(vector![x, 0.0], true);
             rb.set_rotation(Rotation::new(rot), true);
