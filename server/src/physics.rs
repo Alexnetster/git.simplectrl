@@ -35,6 +35,19 @@ fn tag(robot: usize, part: usize) -> u128 {
     ((robot as u128) << 64) | (part as u128)
 }
 
+/// 충돌 쌍이 데미지 대상인지 판정(순수). 둘 다 로봇 부위(Some)이고 **서로 다른 로봇**일 때만.
+/// 벽/공(None)·같은 로봇 부위 쌍은 무데미지. 결정성 위해 (robot,part) 오름차순 정규화.
+fn damage_pair(
+    a: Option<(usize, usize)>,
+    b: Option<(usize, usize)>,
+) -> Option<((usize, usize), (usize, usize))> {
+    let (a, b) = (a?, b?);
+    if a.0 == b.0 {
+        return None; // 같은 로봇(자기 부위끼리) → 무데미지
+    }
+    Some(if a <= b { (a, b) } else { (b, a) })
+}
+
 pub struct PhysicsWorld {
     bodies: RigidBodySet,
     colliders: ColliderSet,
@@ -206,6 +219,10 @@ impl PhysicsWorld {
 
     pub fn step(&mut self, controls: &[ControlOutput]) {
         self.apply_controls(controls);
+        // 충돌 이벤트 채널: collision + (미사용) contact-force 둘 다 필요(rapier 재수출).
+        let (cs, cr) = rapier2d::crossbeam::channel::unbounded();
+        let (fs, _fr) = rapier2d::crossbeam::channel::unbounded();
+        let ev = ChannelEventCollector::new(cs, fs);
         self.pipeline.step(
             &self.gravity,
             &self.params,
@@ -219,10 +236,50 @@ impl PhysicsWorld {
             &mut self.ccd,
             Some(&mut self.query),
             &(),
-            &(),
+            &ev,
         );
+        self.apply_collision_damage(&cr);
+        for c in &mut self.combat {
+            c.tick_down();
+        }
         self.check_goal();
         self.time += DT;
+    }
+
+    /// 로봇↔로봇 충돌 이벤트를 상호 데미지로 적용. 공/벽 접촉은 무데미지.
+    /// 결정성: 한 스텝 다중 히트를 (rA,rB,pA,pB)로 정렬 후 적용(f32 비결합성 방지).
+    fn apply_collision_damage(
+        &mut self,
+        cr: &rapier2d::crossbeam::channel::Receiver<CollisionEvent>,
+    ) {
+        // 1) 수집 + 필터(둘 다 로봇 부위 & 서로 다른 로봇) + 오름차순 정규화
+        let mut hits: Vec<((usize, usize), (usize, usize))> = Vec::new();
+        while let Ok(CollisionEvent::Started(h1, h2, _)) = cr.try_recv() {
+            let a = self.part_map.get(&h1).copied();
+            let b = self.part_map.get(&h2).copied();
+            if let Some(pair) = damage_pair(a, b) {
+                hits.push(pair);
+            }
+        }
+        // 2) 결정성 정렬
+        hits.sort_by_key(|&((ra, pa), (rb, pb))| (ra, rb, pa, pb));
+        // 3) 상호 데미지 적용
+        for ((ra, pa), (rb, pb)) in hits {
+            // impact = 두 로봇 바디 상대 linvel 크기(ADR-009 접촉 임펄스의 의도적 간소화).
+            let impact = self.relative_speed(ra, rb);
+            let dmg_a = crate::combat::damage_on_contact(&self.stats[rb], &self.stats[ra], impact);
+            let dmg_b = crate::combat::damage_on_contact(&self.stats[ra], &self.stats[rb], impact);
+            self.combat[ra].apply_damage(pa, dmg_a);
+            self.combat[rb].apply_damage(pb, dmg_b);
+        }
+    }
+
+    /// 두 로봇 바디의 상대 속도 크기.
+    fn relative_speed(&self, ra: usize, rb: usize) -> f32 {
+        let va = *self.bodies[self.robots[ra]].linvel();
+        let vb = *self.bodies[self.robots[rb]].linvel();
+        let d = va - vb;
+        (d.x * d.x + d.y * d.y).sqrt()
     }
 
     fn check_goal(&mut self) {
@@ -264,6 +321,21 @@ impl PhysicsWorld {
         let b = &mut self.bodies[self.ball];
         b.set_translation(pos, true);
         b.set_linvel(vel, true);
+    }
+
+    #[cfg(test)]
+    pub fn set_robot_for_test(&mut self, i: usize, pos: Vector<Real>, rot: f32) {
+        let rb = &mut self.bodies[self.robots[i]];
+        rb.set_translation(pos, true);
+        rb.set_rotation(Rotation::new(rot), true);
+        rb.set_linvel(vector![0.0, 0.0], true);
+        rb.set_angvel(0.0, true);
+    }
+
+    /// 로봇 i의 최소 부위 HP비율(테스트/디버그).
+    #[cfg(test)]
+    pub fn hp_ratio_min(&self, i: usize) -> f32 {
+        self.combat[i].hp_ratio_min()
     }
 
     pub fn snapshot(&self) -> GameState {
@@ -312,6 +384,100 @@ mod tests {
         // part_map 멤버십 = 로봇 수 × 부위 수, 모두 유효한 (robot,part) 디코드
         assert_eq!(w.part_map.len(), 2 * w.robot_part_count());
         assert!(w.part_map.values().all(|&(r, p)| r < 2 && p < NUM_PARTS));
+    }
+
+    #[test]
+    fn damage_pair_only_for_different_robots() {
+        // 벽/공(None) 포함 쌍 → 무데미지 (wall-no-damage)
+        assert_eq!(damage_pair(None, Some((0, 0))), None, "벽↔로봇 무데미지");
+        assert_eq!(damage_pair(Some((1, 0)), None), None);
+        assert_eq!(damage_pair(None, None), None);
+        // 같은 로봇의 다른 부위 → 무데미지 (self-part-no-damage)
+        assert_eq!(
+            damage_pair(Some((0, 0)), Some((0, 1))),
+            None,
+            "자기 부위끼리 무데미지"
+        );
+        // 다른 로봇 → 데미지(오름차순 정규화 쌍)
+        assert_eq!(damage_pair(Some((1, 2)), Some((0, 0))), Some(((0, 0), (1, 2))));
+        assert_eq!(damage_pair(Some((0, 1)), Some((1, 0))), Some(((0, 1), (1, 0))));
+    }
+
+    #[test]
+    fn robots_colliding_take_mutual_damage() {
+        use crate::parts::{aggregate, catalog};
+        let cat = catalog();
+        let mut w = PhysicsWorld::new_kickoff_with(
+            [aggregate(&cat, "striker"), aggregate(&cat, "guard")],
+            ["striker".to_string(), "guard".to_string()],
+        );
+        // 공을 치워 로봇끼리만 충돌
+        w.set_ball_for_test(vector![0.0, 3.0], vector![0.0, 0.0]);
+        // 두 로봇을 마주보게 근접 배치
+        w.set_robot_for_test(0, vector![-0.4, 0.0], 0.0);
+        w.set_robot_for_test(1, vector![0.4, 0.0], std::f32::consts::PI);
+        let before = (w.hp_ratio_min(0), w.hp_ratio_min(1));
+        // 서로를 향해 돌진(robot0 +x, robot1 -x)
+        let toward = [ControlOutput {
+            thrust: 1.0,
+            turn: 0.0,
+        }; 2];
+        for _ in 0..120 {
+            w.step(&toward);
+        }
+        let after = (w.hp_ratio_min(0), w.hp_ratio_min(1));
+        assert!(
+            after.0 < before.0 && after.1 < before.1,
+            "충돌 시 양쪽 부위 HP 감소 (before {before:?} after {after:?})"
+        );
+    }
+
+    #[test]
+    fn ball_contact_does_no_damage() {
+        use crate::parts::{aggregate, catalog};
+        let cat = catalog();
+        let mut w = PhysicsWorld::new_kickoff_with(
+            [aggregate(&cat, "striker"), aggregate(&cat, "striker")],
+            [String::new(), String::new()],
+        );
+        // robot0을 공(원점) 왼쪽에 두고 돌진, robot1은 멀리(로봇충돌 배제)
+        w.set_robot_for_test(0, vector![-0.6, 0.0], 0.0);
+        w.set_robot_for_test(1, vector![5.0, 3.0], 0.0);
+        for _ in 0..300 {
+            w.step(&[
+                ControlOutput {
+                    thrust: 1.0,
+                    turn: 0.0,
+                },
+                ControlOutput::default(),
+            ]);
+        }
+        assert!(w.hp_ratio_min(0) > 0.99, "공 접촉은 무데미지");
+        assert!(w.hp_ratio_min(1) > 0.99);
+    }
+
+    #[test]
+    fn wall_contact_does_no_damage() {
+        use crate::parts::{aggregate, catalog};
+        let cat = catalog();
+        let mut w = PhysicsWorld::new_kickoff_with(
+            [aggregate(&cat, "striker"), aggregate(&cat, "striker")],
+            [String::new(), String::new()],
+        );
+        w.set_ball_for_test(vector![5.0, -3.0], vector![0.0, 0.0]);
+        // robot0을 상단 벽으로 돌진(rot=+PI/2), robot1은 멀리
+        w.set_robot_for_test(0, vector![-3.0, 3.0], std::f32::consts::FRAC_PI_2);
+        w.set_robot_for_test(1, vector![3.0, -3.0], 0.0);
+        for _ in 0..200 {
+            w.step(&[
+                ControlOutput {
+                    thrust: 1.0,
+                    turn: 0.0,
+                },
+                ControlOutput::default(),
+            ]);
+        }
+        assert!(w.hp_ratio_min(0) > 0.99, "벽 접촉은 무데미지");
     }
 
     #[test]
