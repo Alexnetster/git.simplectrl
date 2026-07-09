@@ -1,3 +1,4 @@
+use crate::parts::{default_stats, StatSet};
 use crate::world::*;
 use rapier2d::prelude::*;
 
@@ -22,12 +23,24 @@ pub struct PhysicsWorld {
     query: QueryPipeline,
     ball: RigidBodyHandle,
     robots: Vec<RigidBodyHandle>,
+    stats: Vec<StatSet>,
+    preset_ids: Vec<String>,
     pub score: (u32, u32),
     pub time: f32,
 }
 
 impl PhysicsWorld {
+    /// 기본 스탯(기존 하드코딩 등가)으로 위임 — 기존 물리/골/tick 테스트 보존.
     pub fn new_kickoff() -> Self {
+        Self::new_kickoff_with(
+            [default_stats(), default_stats()],
+            [String::new(), String::new()],
+        )
+    }
+
+    /// 로봇별 스탯/프리셋 id를 받아 킥오프 월드를 만든다.
+    /// `stats[i].mass`는 콜라이더 밀도 유래 질량에 **가산**(mass=0=no-op).
+    pub fn new_kickoff_with(stats: [StatSet; 2], preset_ids: [String; 2]) -> Self {
         let mut bodies = RigidBodySet::new();
         let mut colliders = ColliderSet::new();
 
@@ -73,7 +86,7 @@ impl PhysicsWorld {
 
         // 로봇 2대 (배치는 world::KICKOFF 단일 소스)
         let mut robots = Vec::new();
-        for &(x, rot) in KICKOFF.iter() {
+        for (i, &(x, rot)) in KICKOFF.iter().enumerate() {
             let rb = bodies.insert(
                 RigidBodyBuilder::dynamic()
                     .translation(vector![x, 0.0])
@@ -82,6 +95,8 @@ impl PhysicsWorld {
                     // 회전은 apply_controls에서 set_angvel(rate 제어)로 매 스텝 덮어써
                     // angular_damping 효과는 사실상 미미 (조작감 튜닝 여지로만 유지).
                     .angular_damping(4.0)
+                    // 콜라이더 밀도 유래 질량에 가산(스탯 mass; 0=no-op).
+                    .additional_mass(stats[i].mass)
                     .build(),
             );
             colliders.insert_with_parent(
@@ -110,13 +125,33 @@ impl PhysicsWorld {
             query: QueryPipeline::new(),
             ball,
             robots,
+            stats: stats.to_vec(),
+            preset_ids: preset_ids.to_vec(),
             score: (0, 0),
             time: 0.0,
         }
     }
 
+    fn apply_controls(&mut self, controls: &[ControlOutput]) {
+        for (i, (h, c)) in self.robots.iter().zip(controls.iter()).enumerate() {
+            let st = &self.stats[i];
+            let rb = &mut self.bodies[*h];
+            rb.set_angvel(c.turn * st.turn_rate, true);
+            let angle = rb.rotation().angle();
+            let dir = vector![angle.cos(), angle.sin()];
+            rb.apply_impulse(dir * (c.thrust * st.accel * DT), true);
+            // maxSpeed 클램프 (impulse 적용 후)
+            let v = *rb.linvel();
+            let sp = (v.x * v.x + v.y * v.y).sqrt();
+            if sp > st.max_speed && sp > 0.0 {
+                let k = st.max_speed / sp;
+                rb.set_linvel(vector![v.x * k, v.y * k], true);
+            }
+        }
+    }
+
     pub fn step(&mut self, controls: &[ControlOutput]) {
-        apply_controls(&mut self.bodies, &self.robots, controls);
+        self.apply_controls(controls);
         self.pipeline.step(
             &self.gravity,
             &self.params,
@@ -210,18 +245,6 @@ fn to_vec2(v: &Vector<Real>) -> Vec2 {
     Vec2 { x: v.x, y: v.y }
 }
 
-fn apply_controls(bodies: &mut RigidBodySet, robots: &[RigidBodyHandle], controls: &[ControlOutput]) {
-    const THRUST: f32 = 6.0;
-    const TURN_RATE: f32 = 3.0;
-    for (h, c) in robots.iter().zip(controls.iter()) {
-        let rb = &mut bodies[*h];
-        rb.set_angvel(c.turn * TURN_RATE, true);
-        let angle = rb.rotation().angle();
-        let dir = vector![angle.cos(), angle.sin()];
-        rb.apply_impulse(dir * (c.thrust * THRUST * DT), true);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -265,6 +288,40 @@ mod tests {
         assert!(scored, "공이 오른쪽 골로 들어가 Blue 득점해야 함");
         // 득점 후 공은 킥오프로 리셋
         assert!(w.snapshot().ball.pos.x.abs() < 0.1);
+    }
+
+    #[test]
+    fn higher_accel_robot_travels_farther() {
+        use crate::parts::{aggregate, catalog};
+        let cat = catalog();
+        // robot0=guard(accel↑), robot1=striker → 이동 거리가 달라야 함
+        let mut w = PhysicsWorld::new_kickoff_with(
+            [aggregate(&cat, "guard"), aggregate(&cat, "striker")],
+            ["guard".to_string(), "striker".to_string()],
+        );
+        let fwd = [
+            ControlOutput {
+                thrust: 1.0,
+                turn: 0.0,
+            },
+            ControlOutput {
+                thrust: 1.0,
+                turn: 0.0,
+            },
+        ];
+        let x0 = w
+            .snapshot()
+            .robots
+            .iter()
+            .map(|r| r.pos.x)
+            .collect::<Vec<_>>();
+        for _ in 0..60 {
+            w.step(&fwd);
+        }
+        let s = w.snapshot();
+        let d0 = (s.robots[0].pos.x - x0[0]).abs();
+        let d1 = (s.robots[1].pos.x - x0[1]).abs();
+        assert!(d0 != d1, "스탯이 다르면 이동 거리가 달라야 함");
     }
 
     #[test]
