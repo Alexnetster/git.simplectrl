@@ -20,7 +20,8 @@
 | **Plan 1 — 걷는 뼈대** ✅완료 | 결정적 sim + Controller + WS 30Hz + canvas + 골/스코어 | [계획](docs/superpowers/plans/2026-07-03-walking-skeleton.md) |
 | **Plan 2 — 물리/충돌(rapier2d)** ✅완료 | 밀기 드리블·벽 반사·골 센서·누산기·리플레이 | [계획](docs/superpowers/plans/2026-07-08-physics-collision.md) |
 | **Plan 3a — 파츠/로드아웃/스탯** ✅완료 | 파츠 조립·스탯→물리·카탈로그·비대칭 프리셋 | [계획](docs/superpowers/plans/2026-07-08-parts-loadout.md) |
-| **Plan 3b — 전투/데미지** ⭐다음 | 복합 콜라이더·상호 데미지·부위HP·파손다운·넉백/스턴 | (예정) |
+| **Plan 3b — 전투/데미지** ⭐다음 | 부위 콜라이더·충돌 이벤트·상호 데미지·부위HP·파손다운 | [계획](docs/superpowers/plans/2026-07-08-combat-damage.md) |
+| Plan 3c — 효과 선택 | 넉백/스턴/데미지 effect 프로필·impact 비례 중첩 | (예정) |
 | Plan 4 — 제어 모드/입력 | 직접(키보드)·전략(마우스)·런타임 전환 | (예정) |
 | Plan 5 — 게임 흐름 | ATTRACT/SELECT/PLAYING/RESULT·슬롯 참가/인계 | (예정) |
 | Plan 6 — 랭킹 | 로봇별 승률 인메모리 | (예정) |
@@ -31,7 +32,17 @@
 
 ## Backlog
 
-**Plan 3b+** — 각 Plan 착수 시 writing-plans로 카드 추가.
+**Plan 3b — 전투/데미지 (TDD 순서, [계획](docs/superpowers/plans/2026-07-08-combat-damage.md))**
+- [ ] KB-24 데미지 공식(순수) (테스트: impact·attack/defense 불변식)
+- [ ] KB-25 부위 HP + 파손다운/리페어(순수) (테스트: HP 소진→다운→리페어) [의존: KB-24]
+- [ ] KB-26 부위별 복합 콜라이더 + user_data 태깅 (테스트: 부위 콜라이더 다수) [의존: KB-25]
+- [ ] KB-27 충돌 이벤트→상호 데미지(로봇↔로봇만) (테스트: 충돌 시 양쪽 HP↓ / 공 무데미지) [의존: KB-26]
+- [ ] KB-28 다운 입력 무시 + 스냅샷 디버프 필드(parts/down/st) (테스트: 다운 중 미이동·스냅샷 반영) [의존: KB-27]
+- [ ] KB-29 결정성 회귀 + E2E + 문서/KANBAN [의존: KB-28]
+
+> ⚠️ 착수 전 **드라이런 권장**: rapier 충돌 이벤트(`ActiveEvents`/`ChannelEventCollector`/`CollisionEvent`/`user_data`) API + 이벤트 순서 결정성 확인.
+
+**Plan 3c+** — 각 Plan 착수 시 writing-plans로 카드 추가.
 
 **남은 관찰/부채 (후속)**
 - 클라 보간 — 아직 최신 스냅샷 렌더 / 포트·URL 상수화(8090×2), 클라 재연결·try-catch / main publish 프레임당 1회(스톨 시 순간 <30Hz) / 클라 vitest 미설정
