@@ -38,6 +38,9 @@ mod tests {
             rot: 0.0,
             vel: Vec2 { x: 0.0, y: 0.0 },
             robot: String::new(),
+            parts: Vec::new(),
+            down: Down::default(),
+            st: Vec::new(),
         };
         let ball = BallState {
             pos: Vec2 { x: 5.0, y: 0.0 },

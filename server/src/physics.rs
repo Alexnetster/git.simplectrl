@@ -201,6 +201,10 @@ impl PhysicsWorld {
 
     fn apply_controls(&mut self, controls: &[ControlOutput]) {
         for (i, (h, c)) in self.robots.iter().zip(controls.iter()).enumerate() {
+            // 파손 다운 로봇은 입력 무시(행동불능). 잔여 속도는 물리(감쇠)로 소멸.
+            if self.combat[i].broken() {
+                continue;
+            }
             let st = &self.stats[i];
             let rb = &mut self.bodies[*h];
             rb.set_angvel(c.turn * st.turn_rate, true);
@@ -338,6 +342,12 @@ impl PhysicsWorld {
         self.combat[i].hp_ratio_min()
     }
 
+    /// 로봇 i를 강제 파손 다운(테스트 전용).
+    #[cfg(test)]
+    pub fn force_break_for_test(&mut self, i: usize) {
+        self.combat[i].force_down();
+    }
+
     pub fn snapshot(&self) -> GameState {
         let b = &self.bodies[self.ball];
         let ball = BallState {
@@ -350,12 +360,27 @@ impl PhysicsWorld {
             .enumerate()
             .map(|(i, h)| {
                 let rb = &self.bodies[*h];
+                let cs = &self.combat[i];
+                let parts = (0..cs.part_count())
+                    .map(|p| (PART_NAMES[p].to_string(), cs.hp_ratio(p)))
+                    .collect();
+                let broken = cs.broken();
                 RobotState {
                     id: if i == 0 { Team::Blue } else { Team::Red },
                     pos: to_vec2(rb.translation()),
                     rot: rb.rotation().angle(), // rapier가 정규화된 각도 반환
                     vel: to_vec2(rb.linvel()),
                     robot: self.preset_ids[i].clone(),
+                    parts,
+                    down: Down {
+                        broken,
+                        repair_in: cs.repair_in(),
+                    },
+                    st: if broken {
+                        vec!["downed".to_string()]
+                    } else {
+                        Vec::new()
+                    },
                 }
             })
             .collect();
@@ -478,6 +503,43 @@ mod tests {
             ]);
         }
         assert!(w.hp_ratio_min(0) > 0.99, "벽 접촉은 무데미지");
+    }
+
+    #[test]
+    fn downed_robot_ignores_input_and_snapshot_shows_state() {
+        let mut w = PhysicsWorld::new_kickoff();
+        w.force_break_for_test(0);
+        let s = w.snapshot();
+        assert!(s.robots[0].down.broken, "스냅샷에 파손 다운 표시");
+        assert!(s.robots[0].down.repair_in > 0.0, "리페어 잔여시간 노출");
+        assert!(s.robots[0].st.iter().any(|x| x == "downed"));
+        assert!(!s.robots[0].parts.is_empty(), "부위 HP 노출");
+        assert!(s.robots[1].st.is_empty(), "정상 로봇은 상태이상 없음");
+        // 와이어(JSON) 직렬화에도 디버프 필드가 실리는지(net.rs와 동일 경로)
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(json.contains("\"broken\":true"));
+        assert!(json.contains("\"downed\""));
+        assert!(json.contains("\"parts\":"));
+        // 다운 중 전진 입력 줘도 크게 안 움직임(입력 무시)
+        let p0 = w.snapshot().robots[0].pos.x;
+        for _ in 0..30 {
+            w.step(&[
+                ControlOutput {
+                    thrust: 1.0,
+                    turn: 0.0,
+                },
+                ControlOutput::default(),
+            ]);
+        }
+        assert!((w.snapshot().robots[0].pos.x - p0).abs() < 0.5);
+        // 타이머 소진까지 진행 → 리페어(broken=false, 전체 부위 HP 복구)
+        for _ in 0..w.combat[0].repair_ticks() {
+            w.step(&[ControlOutput::default(); 2]);
+        }
+        let s2 = w.snapshot();
+        assert!(!s2.robots[0].down.broken, "리페어 후 다운 해제");
+        assert!(s2.robots[0].st.is_empty());
+        assert!(w.hp_ratio_min(0) > 0.99, "리페어 시 전체 부위 HP 복구");
     }
 
     #[test]

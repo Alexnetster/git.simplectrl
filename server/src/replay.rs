@@ -6,7 +6,8 @@ use crate::parts::{default_stats, StatSet};
 use crate::physics::PhysicsWorld;
 use crate::world::GameState;
 
-/// 결정적 상태 해시(부동소수를 비트로). 로봇 pos/rot + 공 pos + 스코어.
+/// 결정적 상태 해시(부동소수를 비트로). 로봇 pos/rot + 부위 HP·파손다운 + 공 pos + 스코어.
+/// 전투(부위 HP/다운)도 결정적 회귀 대상 → 해시에 포함(same-build 동일입력 동일해시).
 pub fn hash_state(s: &GameState) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -14,6 +15,12 @@ pub fn hash_state(s: &GameState) -> u64 {
         r.pos.x.to_bits().hash(&mut h);
         r.pos.y.to_bits().hash(&mut h);
         r.rot.to_bits().hash(&mut h);
+        for (name, ratio) in &r.parts {
+            name.hash(&mut h);
+            ratio.to_bits().hash(&mut h);
+        }
+        r.down.broken.hash(&mut h);
+        r.down.repair_in.to_bits().hash(&mut h);
     }
     s.ball.pos.x.to_bits().hash(&mut h);
     s.ball.pos.y.to_bits().hash(&mut h);
@@ -43,6 +50,17 @@ mod tests {
     #[test]
     fn same_inputs_same_hash_same_build() {
         assert_eq!(run_headless(600), run_headless(600));
+    }
+
+    #[test]
+    fn combat_state_is_deterministic_and_hashed() {
+        use crate::parts::{aggregate, catalog};
+        let cat = catalog();
+        // 두 로봇이 공을 쫓다 중앙에서 충돌 → 부위 HP/다운이 해시에 반영되어도 결정적.
+        let run = || {
+            run_headless_with([aggregate(&cat, "striker"), aggregate(&cat, "guard")], 600)
+        };
+        assert_eq!(run(), run(), "전투 포함 상태도 same-build 동일입력 동일해시");
     }
 
     #[test]

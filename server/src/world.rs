@@ -15,7 +15,14 @@ pub struct Vec2 {
     pub y: f32,
 }
 
-// Copy 불가: `robot: String` 필드 때문에 Clone만 파생(스냅샷 클론에 충분).
+/// 파손 다운 상태(스냅샷 디버프). `repair_in`=리페어까지 남은 초.
+#[derive(Clone, Serialize, Default)]
+pub struct Down {
+    pub broken: bool,
+    pub repair_in: f32,
+}
+
+// Copy 불가: `robot: String`/Vec 필드 때문에 Clone만 파생(스냅샷 클론에 충분).
 #[derive(Clone, Serialize)]
 pub struct RobotState {
     pub id: Team,
@@ -24,6 +31,12 @@ pub struct RobotState {
     pub vel: Vec2,
     /// 로드아웃/프리셋 id (스냅샷에 additive; 기존 필드 불변).
     pub robot: String,
+    /// 부위별 (부위명, HP비율 0..1).
+    pub parts: Vec<(String, f32)>,
+    /// 파손 다운 상태.
+    pub down: Down,
+    /// 상태이상 태그(3b: 파손 다운 시 `["downed"]`, 그 외 빈 벡터).
+    pub st: Vec<String>,
 }
 
 #[derive(Clone, Copy, Serialize)]
@@ -70,6 +83,9 @@ impl GameState {
                 rot,
                 vel: Vec2 { x: 0.0, y: 0.0 },
                 robot: String::new(),
+                parts: Vec::new(),
+                down: Down::default(),
+                st: Vec::new(),
             })
             .collect();
         GameState {

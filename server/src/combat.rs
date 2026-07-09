@@ -39,6 +39,7 @@ impl CombatState {
         self.down_timer > 0
     }
 
+    #[cfg(test)]
     pub fn repair_ticks(&self) -> u32 {
         REPAIR_TICKS
     }
@@ -61,6 +62,7 @@ impl CombatState {
     }
 
     /// 모든 부위 중 최소 HP비율(테스트/디버프 판정용).
+    #[cfg(test)]
     pub fn hp_ratio_min(&self) -> f32 {
         (0..self.hp.len())
             .map(|i| self.hp_ratio(i))
