@@ -8,7 +8,28 @@
 
 **Tech Stack:** rapier2d 0.26(충돌 이벤트), 기존 스택. 설계: [00 §12](../../00-개요-및-게임설계.md), [02 §4 스냅샷/이벤트](../../02-네트워크-프로토콜.md), [07 ADR-008/009](../../07-결정기록-ADR.md).
 
-> **rapier 충돌 이벤트 — 드라이런 필수:** `ActiveEvents::COLLISION_EVENTS`, `ChannelEventCollector`, `pipeline.step(..., &events)`, `CollisionEvent::Started(h1,h2,flags)`, 콜라이더 `user_data`(u128) 태깅 — **버전 민감**. 착수 전 컴파일 프로브(0.26)로 시그니처 확정. 데미지/HP/파손다운 테스트는 **불변식 기반**이라 이벤트 배관과 분리해 강건.
+> **rapier 충돌 이벤트:** 착수 전 컴파일 프로브(0.26.1)로 **검증 완료** — 아래 필수 반영 참조.
+
+## ⚠️ 착수 전 필수 반영 (드라이런 점검 — 이 목록이 태스크 코드보다 우선)
+
+프로브 결과: 충돌 이벤트 API는 0.26.1에서 동작. 아래 반영해야 컴파일/정확성/결정성이 산다.
+
+1. **[하드 API] `user_data`는 필드**(메서드 아님): `let ud = colliders[h1].user_data;` (괄호 없음). 플랜/설계의 `.user_data()`는 오기.
+2. **[하드 API] 채널 = `rapier2d::crossbeam` 재수출, 2개 필요** (신규 크레이트 X):
+   ```rust
+   let (cs, cr) = rapier2d::crossbeam::channel::unbounded(); // collision
+   let (fs, _fr) = rapier2d::crossbeam::channel::unbounded(); // contact-force (미사용도 필요)
+   let ev = ChannelEventCollector::new(cs, fs);
+   self.pipeline.step(&self.gravity, &self.params, /*...*/, Some(&mut self.query), &(), &ev);
+   while let Ok(CollisionEvent::Started(h1, h2, _)) = cr.try_recv() { /* ... */ }
+   ```
+   `pipeline.step`의 **마지막 인자만** `&()`→`&ev` (뒤에서 2번째 physics-hooks `&()`는 유지).
+3. **[HIGH 정확성] 태그 없는 콜라이더 함정**: 벽/공은 `user_data==0` → `(robot0,part0)`로 오독. robot-1이 벽 치면 "robot1 vs robot0"로 **오데미지**. → **decode-only `r1!=r2` 금지.** 로봇 부위 콜라이더를 **`HashSet<ColliderHandle>` 멤버십**으로 관리하거나 **비로봇=robot_idx 0, 로봇=1·2 sentinel offset**을 써서 "양쪽 다 로봇 부위"인 쌍만 처리. **wall-no-damage · self-part-no-damage 테스트 추가**(Task 4).
+4. **[결정성] 이벤트 정렬**: 수집한 충돌을 `(rA,rB,pA,pB)`로 **정렬 후 데미지 적용**. 단일스레드라 방출 순서는 same-build 결정적이지만, 한 스텝 다중 히트 시 f32 비결합성으로 HP(→hash)가 순서 민감 → 정렬로 안정화(골든 리플레이 보호).
+5. **[재베이스라인] 복합 콜라이더 = 질량/관성 변화**: 단일 큐보이드→부위별 자식 콜라이더로 바꾸면 기존 `replay` 골든 해시·`goal`/`robot_speed_capped` 테스트가 흔들릴 수 있음. **재베이스라인 + 재검증** 예상(Task 3·6).
+6. **[설계 정합 명시]** impact = **상대 linvel 근사**(ADR-009의 접촉 임펄스 간소화; 진짜 임펄스는 `ContactForceEvent`=`CONTACT_FORCE_EVENTS`+threshold, 3c/튜닝). 부위별 **취약도** 항도 생략(3c). 이 2가지를 Task 4/문서에 "의도적 간소화"로 명기.
+7. **[스냅샷 명명]** 이 플랜은 `parts: Vec<(String,f32)>`·snake_case `repair_in` — [02 §4](../../02-네트워크-프로토콜.md)의 object/`repairIn`(camelCase)과 다름. 기존 관례(`id:"Blue"` 등)와 동일 방향이라 3b 블로커 아님 — 와이어 스키마를 snake/tuple 관례로 [02] 갱신 시 명기.
+8. **[커버리지]** Task별 테스트에 추가: self-part 무데미지, wall 무데미지, 다운 중 히트 재트리거 없음, 리페어가 **전체 부위** 복구.
 
 ---
 
