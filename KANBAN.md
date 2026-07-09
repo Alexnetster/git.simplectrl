@@ -20,8 +20,8 @@
 | **Plan 1 — 걷는 뼈대** ✅완료 | 결정적 sim + Controller + WS 30Hz + canvas + 골/스코어 | [계획](docs/superpowers/plans/2026-07-03-walking-skeleton.md) |
 | **Plan 2 — 물리/충돌(rapier2d)** ✅완료 | 밀기 드리블·벽 반사·골 센서·누산기·리플레이 | [계획](docs/superpowers/plans/2026-07-08-physics-collision.md) |
 | **Plan 3a — 파츠/로드아웃/스탯** ✅완료 | 파츠 조립·스탯→물리·카탈로그·비대칭 프리셋 | [계획](docs/superpowers/plans/2026-07-08-parts-loadout.md) |
-| **Plan 3b — 전투/데미지** ⭐다음 | 부위 콜라이더·충돌 이벤트·상호 데미지·부위HP·파손다운 | [계획](docs/superpowers/plans/2026-07-08-combat-damage.md) |
-| Plan 3c — 효과 선택 | 넉백/스턴/데미지 effect 프로필·impact 비례 중첩 | (예정) |
+| **Plan 3b — 전투/데미지** ✅완료 | 부위 콜라이더·충돌 이벤트·상호 데미지·부위HP·파손다운 | [계획](docs/superpowers/plans/2026-07-08-combat-damage.md) |
+| **Plan 3c — 효과 선택** ⭐다음 | 넉백/스턴/데미지 effect 프로필·impact 비례 중첩 | (예정) |
 | Plan 4 — 제어 모드/입력 | 직접(키보드)·전략(마우스)·런타임 전환 | (예정) |
 | Plan 5 — 게임 흐름 | ATTRACT/SELECT/PLAYING/RESULT·슬롯 참가/인계 | (예정) |
 | Plan 6 — 랭킹 | 로봇별 승률 인메모리 | (예정) |
@@ -32,21 +32,13 @@
 
 ## Backlog
 
-**Plan 3b — 전투/데미지 (TDD 순서, [계획](docs/superpowers/plans/2026-07-08-combat-damage.md))**
-- [ ] KB-24 데미지 공식(순수) (테스트: impact·attack/defense 불변식)
-- [ ] KB-25 부위 HP + 파손다운/리페어(순수) (테스트: HP 소진→다운→리페어) [의존: KB-24]
-- [ ] KB-26 부위별 복합 콜라이더 + user_data 태깅 (테스트: 부위 콜라이더 다수) [의존: KB-25]
-- [ ] KB-27 충돌 이벤트→상호 데미지(로봇↔로봇만) (테스트: 충돌 시 양쪽 HP↓ / 공 무데미지) [의존: KB-26]
-- [ ] KB-28 다운 입력 무시 + 스냅샷 디버프 필드(parts/down/st) (테스트: 다운 중 미이동·스냅샷 반영) [의존: KB-27]
-- [ ] KB-29 결정성 회귀 + E2E + 문서/KANBAN [의존: KB-28]
-
-> ⚠️ 착수 전 **드라이런 권장**: rapier 충돌 이벤트(`ActiveEvents`/`ChannelEventCollector`/`CollisionEvent`/`user_data`) API + 이벤트 순서 결정성 확인.
-
 **Plan 3c+** — 각 Plan 착수 시 writing-plans로 카드 추가.
 
 **남은 관찰/부채 (후속)**
 - 클라 보간 — 아직 최신 스냅샷 렌더 / 포트·URL 상수화(8090×2), 클라 재연결·try-catch / main publish 프레임당 1회(스톨 시 순간 <30Hz) / 클라 vitest 미설정
-- (Plan 3a Minor) `apply_controls` 중복 가드·테스트명 정확성·aggregate slot 유니크 assert — 코스메틱, 여유 시
+- (Plan 3a Minor) `apply_controls` 중복 가드·테스트명 정확성·aggregate slot 유니크 assert — 코스메틱
+- (Plan 3b Minor) 리플레이 전투 해시 테스트가 대칭AI라 데미지 없이 통과 가능(메커니즘은 강제충돌 테스트로 검증됨) / 다운 로봇도 접촉 데미지 가함(물리 장애물) / PART_NAMES↔part_count 결합 debug_assert — 전부 선택
+- (Plan 3c 튜닝) impact=상대속도(post-step)·부위별 취약도·다중 부위쌍 동시 데미지
 
 ## Todo
 _(비어 있음 — Plan 3b 착수 시 채움)_
@@ -55,6 +47,14 @@ _(비어 있음 — Plan 3b 착수 시 채움)_
 _(비어 있음)_
 
 ## Done
+**Plan 3b — 전투/데미지 ✅** (branch `feat/combat-damage`)
+- [x] KB-24 데미지 공식(순수)
+- [x] KB-25 부위 HP + 파손다운/리페어(순수)
+- [x] KB-26 부위별 복합 콜라이더 + user_data 태깅
+- [x] KB-27 충돌 이벤트→상호 데미지(로봇↔로봇만, part_map 멤버십 필터)
+- [x] KB-28 다운 입력 무시 + 스냅샷 디버프 필드(parts/down/st)
+- [x] KB-29 검증: cargo test 27/27, debug+release warning 0, 스냅샷 디버프 필드 확인. 라이브 충돌은 비대칭 필요(대칭 AI 미접촉)
+
 **Plan 3a — 파츠/로드아웃/스탯 ✅** (branch `feat/walking-skeleton`)
 - [x] KB-18 파츠/스탯 카탈로그 + 로드아웃 집계
 - [x] KB-19 물리에 로봇별 스탯 반영(accel/turn/maxSpeed/mass)
@@ -63,7 +63,6 @@ _(비어 있음)_
 - [x] KB-22 main 비대칭 프리셋(striker/guard) + 헤드리스 검증
 - [x] KB-23 검증: cargo test 17/17, 릴리스 warning 0, WS 비대칭 이동+catalog 확인
 
-**Plan 2 — 물리/충돌(rapier2d) ✅** (branch `feat/walking-skeleton`)
 **Plan 2 — 물리/충돌(rapier2d) ✅** (branch `feat/walking-skeleton`)
 - [x] KB-11 rapier2d 0.26 + 물리 월드(벽/공/로봇2)
 - [x] KB-12 물리 스텝 + 골 판정·리셋
