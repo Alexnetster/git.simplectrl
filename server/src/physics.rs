@@ -229,6 +229,7 @@ impl PhysicsWorld {
                     pos: to_vec2(rb.translation()),
                     rot: rb.rotation().angle(), // rapier가 정규화된 각도 반환
                     vel: to_vec2(rb.linvel()),
+                    robot: self.preset_ids[i].clone(),
                 }
             })
             .collect();
@@ -288,6 +289,19 @@ mod tests {
         assert!(scored, "공이 오른쪽 골로 들어가 Blue 득점해야 함");
         // 득점 후 공은 킥오프로 리셋
         assert!(w.snapshot().ball.pos.x.abs() < 0.1);
+    }
+
+    #[test]
+    fn snapshot_carries_preset_id() {
+        use crate::parts::{aggregate, catalog};
+        let cat = catalog();
+        let w = PhysicsWorld::new_kickoff_with(
+            [aggregate(&cat, "striker"), aggregate(&cat, "guard")],
+            ["striker".to_string(), "guard".to_string()],
+        );
+        let s = w.snapshot();
+        assert_eq!(s.robots[0].robot, "striker");
+        assert_eq!(s.robots[1].robot, "guard");
     }
 
     #[test]

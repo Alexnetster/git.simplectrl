@@ -15,12 +15,15 @@ pub struct Vec2 {
     pub y: f32,
 }
 
-#[derive(Clone, Copy, Serialize)]
+// Copy 불가: `robot: String` 필드 때문에 Clone만 파생(스냅샷 클론에 충분).
+#[derive(Clone, Serialize)]
 pub struct RobotState {
     pub id: Team,
     pub pos: Vec2,
     pub rot: f32,
     pub vel: Vec2,
+    /// 로드아웃/프리셋 id (스냅샷에 additive; 기존 필드 불변).
+    pub robot: String,
 }
 
 #[derive(Clone, Copy, Serialize)]
@@ -66,6 +69,7 @@ impl GameState {
                 pos: Vec2 { x, y: 0.0 },
                 rot,
                 vel: Vec2 { x: 0.0, y: 0.0 },
+                robot: String::new(),
             })
             .collect();
         GameState {
