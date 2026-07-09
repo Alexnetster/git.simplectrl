@@ -291,6 +291,30 @@ mod tests {
     }
 
     #[test]
+    fn robot_speed_capped_by_max_speed() {
+        use crate::parts::StatSet;
+        let slow = StatSet {
+            max_speed: 1.0,
+            accel: 10.0,
+            turn_rate: 1.0,
+            mass: 1.0,
+            ..Default::default()
+        };
+        let mut w =
+            PhysicsWorld::new_kickoff_with([slow, slow], [String::new(), String::new()]);
+        let fwd = [ControlOutput {
+            thrust: 1.0,
+            turn: 0.0,
+        }; 2];
+        for _ in 0..120 {
+            w.step(&fwd);
+        }
+        let v = w.snapshot().robots[0].vel;
+        let sp = (v.x * v.x + v.y * v.y).sqrt();
+        assert!(sp <= 1.05, "속도는 max_speed 근처로 제한되어야 함 (got {sp})");
+    }
+
+    #[test]
     fn higher_accel_robot_travels_farther() {
         use crate::parts::{aggregate, catalog};
         let cat = catalog();
