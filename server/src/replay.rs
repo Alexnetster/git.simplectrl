@@ -1,6 +1,5 @@
-//! 결정성 회귀(골든 리플레이) 하니스. `run_headless`/`hash_state`는 테스트에서
-//! 소비되는 진단용 API라, 바이너리 실행 경로에서는 호출되지 않는다(dead_code 허용).
-#![allow(dead_code)]
+//! 결정성 회귀(골든 리플레이) 하니스. 테스트 전용(`#[cfg(test)] mod replay`)이라
+//! 릴리스 바이너리엔 포함되지 않으며, `run_headless`/`hash_state`는 테스트에서 소비된다.
 
 use crate::control::{ChaseBallAi, Controller};
 use crate::physics::PhysicsWorld;

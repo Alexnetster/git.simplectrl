@@ -4,6 +4,7 @@ mod control;
 mod loop_runner;
 mod net;
 mod physics;
+#[cfg(test)]
 mod replay;
 
 use accumulator::Accumulator;
