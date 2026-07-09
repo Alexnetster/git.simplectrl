@@ -3,6 +3,7 @@ mod world;
 mod control;
 mod loop_runner;
 mod net;
+mod parts;
 mod physics;
 #[cfg(test)]
 mod replay;
