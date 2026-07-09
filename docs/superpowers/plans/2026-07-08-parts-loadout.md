@@ -10,10 +10,22 @@
 
 > **범위 경계(중요):** 이 Plan은 **이동 스탯만** 물리에 반영(`maxSpeed/accel/turnRate/mass`). `kickPower/attack/defense/hp/effect`는 `StatSet`에 **정의만** 하고 사용은 Plan 3b/4. 클라는 현행 박스 렌더 유지(파츠 시각화는 Plan 5).
 
+## ⚠️ 착수 전 필수 반영 (드라이런 점검 — 이 목록이 태스크 코드보다 우선)
+
+검증됨: borrow-check 컴파일 OK(disjoint 필드), rapier `additional_mass`(0.26) 존재. 착수 즉시 반영:
+
+1. **[치명] `RobotState`에서 `Copy` 제거.** `world.rs`의 `#[derive(Clone, Copy, Serialize)]`에 `pub robot: String`을 넣으면 Copy가 깨져 컴파일 실패 → **`#[derive(Clone, Serialize)]`**. (Copy 의존 사용처 없음 확인; `GameState`는 Clone만 필요.)
+2. **[높음] `default_stats()`에 유효값.** `StatSet::default().max_speed==0`이면 Task 2의 maxSpeed 클램프가 **기본 로봇을 정지**시켜 기존 물리/골/tick 테스트가 붕괴. `default_stats()`(→ `parts.rs`에 정의)를 `max_speed=10.0, accel=6.0, turn_rate=3.0, mass=0.0`(=기존 THRUST/TURN_RATE 등가, mass는 가산이라 0=no-op로 기존 거동 보존)로 둔다. `new_kickoff()`는 이 값으로 `new_kickoff_with`에 위임.
+3. **robot id 배선.** `new_kickoff_with([StatSet;2])`만으로는 프리셋 이름을 소실해 스냅샷 `robot` id를 못 채운다. → 시그니처를 **`new_kickoff_with(stats: [StatSet;2], preset_ids: [String;2])`** 로 확장(테스트 호출부도 갱신)하거나 `set_preset_ids(&mut self,[String;2])` 세터 추가. 안 하면 `robot`이 항상 빈 문자열.
+4. **`welcome` 메시지 없음.** 서버에 `welcome` 없음 → "welcome 다음에" 대신 **`net.rs::push_state`의 틱 루프 진입 전 `catalog_msg()` 1회 전송**. `catalog()`는 순수 함수라 핸들러에서 직접 호출 가능.
+5. **`aggregate` 시그니처 = `(&Catalog, &str)`** (아래 File Structure의 `(&Loadout)`는 오기 — 2인자형으로 통일).
+6. **`catalog_msg` DTO/JSON**: 스탯은 [02 §4.2](../../02-네트워크-프로토콜.md)대로 `stats` 중첩 객체로 낸다. 3a 스냅샷은 `robot: presetId`(문자열)만, `loadout` 객체는 Plan 5. [02 §4] 갱신 시 이 경계 명기.
+7. `additional_mass`는 콜라이더 밀도 유래 질량에 **가산**(대체 아님) — mass=0=no-op.
+
 ---
 
 ## File Structure
-- Create: `server/src/parts.rs` — `StatSet`, `Part`, `Slot`, `Loadout`, `catalog()`(파츠+프리셋), `aggregate(&Loadout)->StatSet`
+- Create: `server/src/parts.rs` — `StatSet`, `Part`, `Slot`, `Loadout`, `catalog()`(파츠+프리셋), `aggregate(&Catalog, &str)->StatSet`, `default_stats()->StatSet`
 - Modify: `server/src/physics.rs` — `PhysicsWorld::new_kickoff_with(loadouts)`, 로봇별 `StatSet` 보유, `apply_controls`가 스탯 사용, maxSpeed 클램프
 - Modify: `server/src/world.rs` — 스냅샷 `RobotState`에 `robot: String`(로드아웃/프리셋 id) 추가
 - Modify: `server/src/net.rs` — `catalog` 다운링크 메시지, 스냅샷에 robot id
