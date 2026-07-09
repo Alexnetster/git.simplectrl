@@ -15,6 +15,85 @@ pub fn damage_on_contact(attacker: &StatSet, defender: &StatSet, impact: f32) ->
     (impact.max(0.0) * (atk / def) * K).max(0.0)
 }
 
+/// 파손 다운 지속 틱(3초 @60Hz). 튜닝 대상.
+const REPAIR_TICKS: u32 = 180;
+
+/// 로봇 1대의 부위별 HP + 파손 다운/리페어 타이머 (결정적 순수 상태).
+/// 어떤 부위든 HP가 0에 닿으면 파손 다운 → 타이머 소진 시 **전체 부위** 리페어.
+pub struct CombatState {
+    max: Vec<f32>,
+    hp: Vec<f32>,
+    down_timer: u32,
+}
+
+impl CombatState {
+    pub fn new(max_hp: &[f32]) -> Self {
+        Self {
+            max: max_hp.to_vec(),
+            hp: max_hp.to_vec(),
+            down_timer: 0,
+        }
+    }
+
+    pub fn broken(&self) -> bool {
+        self.down_timer > 0
+    }
+
+    pub fn repair_ticks(&self) -> u32 {
+        REPAIR_TICKS
+    }
+
+    /// 리페어까지 남은 초(스냅샷 `down.repair_in`용). 다운 아니면 0.
+    pub fn repair_in(&self) -> f32 {
+        self.down_timer as f32 * crate::world::DT
+    }
+
+    pub fn part_count(&self) -> usize {
+        self.hp.len()
+    }
+
+    pub fn hp_ratio(&self, i: usize) -> f32 {
+        if self.max[i] > 0.0 {
+            self.hp[i] / self.max[i]
+        } else {
+            1.0
+        }
+    }
+
+    /// 모든 부위 중 최소 HP비율(테스트/디버프 판정용).
+    pub fn hp_ratio_min(&self) -> f32 {
+        (0..self.hp.len())
+            .map(|i| self.hp_ratio(i))
+            .fold(1.0_f32, f32::min)
+    }
+
+    pub fn apply_damage(&mut self, part: usize, dmg: f32) {
+        if self.broken() {
+            return;
+        }
+        self.hp[part] = (self.hp[part] - dmg).max(0.0);
+        if self.hp.iter().any(|&h| h <= 0.0) {
+            self.down_timer = REPAIR_TICKS;
+        }
+    }
+
+    /// 다운 중 매 tick 호출. 타이머 소진 시 전체 리페어.
+    pub fn tick_down(&mut self) {
+        if self.down_timer > 0 {
+            self.down_timer -= 1;
+            if self.down_timer == 0 {
+                self.hp = self.max.clone();
+            }
+        }
+    }
+
+    /// 강제 파손 다운(테스트 전용).
+    #[cfg(test)]
+    pub fn force_down(&mut self) {
+        self.down_timer = REPAIR_TICKS;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -40,5 +119,31 @@ mod tests {
         assert!(d_low > d_high, "방어 높으면 데미지 감소");
         assert!(d_big > d_low, "impact 크면 데미지 증가");
         assert!(d_low >= 0.0);
+    }
+
+    #[test]
+    fn part_hp_depletes_and_triggers_down_then_repairs() {
+        let mut cs = CombatState::new(&[40.0, 30.0]); // 2 부위
+        assert!(!cs.broken());
+        cs.apply_damage(0, 100.0); // 부위0 과다 피해
+        assert!(cs.broken(), "부위 HP 0 → 파손 다운");
+        // 다운 중 추가 피해는 무시(재트리거/중첩 없음)
+        cs.apply_damage(1, 100.0);
+        // 다운 지속 후 리페어
+        for _ in 0..(cs.repair_ticks()) {
+            cs.tick_down();
+        }
+        assert!(!cs.broken(), "일정 시간 뒤 전체 리페어");
+        assert!(cs.hp_ratio(0) > 0.99, "리페어 시 부위0 HP 복구");
+        assert!(cs.hp_ratio(1) > 0.99, "리페어 시 전체 부위 복구");
+    }
+
+    #[test]
+    fn zero_damage_does_not_trigger_down() {
+        // 데미지 0(예: attack=0 로봇)은 파손 다운을 유발하지 않는다.
+        let mut cs = CombatState::new(&[20.0, 20.0]);
+        cs.apply_damage(0, 0.0);
+        assert!(!cs.broken());
+        assert!(cs.hp_ratio_min() > 0.99);
     }
 }
