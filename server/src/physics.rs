@@ -1,12 +1,39 @@
+use crate::combat::CombatState;
 use crate::parts::StatSet;
 use crate::world::*;
 use rapier2d::prelude::*;
+use std::collections::HashMap;
 
 const WALL_T: f32 = 0.2; // 벽 두께
 const BALL_R: f32 = 0.2;
-const ROBOT_HX: f32 = 0.25; // 로봇 반폭
-const ROBOT_HY: f32 = 0.2;
 const RESTITUTION: f32 = 0.85;
+
+/// 로봇 부위 수. 부위별 자식 콜라이더(복합 바디)로 구성.
+const NUM_PARTS: usize = 3;
+/// 부위명(스냅샷 `parts`용). PART_SHAPES/PART_HP_WEIGHT와 index 정합.
+const PART_NAMES: [&str; NUM_PARTS] = ["body", "foreleg", "hindleg"];
+/// 부위 콜라이더 (반폭 hx, 반높이 hy, 로컬 오프셋 ox, oy). 앞(+x)=전진 방향.
+/// 합집합 x∈[-0.25,0.25], y∈[-0.2,0.2] — 기존 단일 큐보이드(ROBOT_HX/HY) 풋프린트 근사.
+const PART_SHAPES: [(f32, f32, f32, f32); NUM_PARTS] = [
+    (0.12, 0.20, 0.0, 0.0),   // body(중심)
+    (0.09, 0.15, 0.16, 0.0),  // foreleg(앞)
+    (0.09, 0.15, -0.16, 0.0), // hindleg(뒤)
+];
+/// 부위별 최대 HP = 기저치 + 로봇 총 hp × 가중치. 기저치로 항상 양수(0-HP 오다운 방지).
+const PART_HP_WEIGHT: [f32; NUM_PARTS] = [0.5, 0.25, 0.25];
+const PART_HP_BASE: f32 = 10.0;
+
+fn part_hps(total_hp: f32) -> Vec<f32> {
+    PART_HP_WEIGHT
+        .iter()
+        .map(|w| PART_HP_BASE + total_hp.max(0.0) * w)
+        .collect()
+}
+
+/// user_data(u128) 태깅: 상위 64비트=robot_idx, 하위=part_idx. (physics.rs 경계 전용)
+fn tag(robot: usize, part: usize) -> u128 {
+    ((robot as u128) << 64) | (part as u128)
+}
 
 pub struct PhysicsWorld {
     bodies: RigidBodySet,
@@ -25,6 +52,11 @@ pub struct PhysicsWorld {
     robots: Vec<RigidBodyHandle>,
     stats: Vec<StatSet>,
     preset_ids: Vec<String>,
+    /// 로봇 부위 콜라이더 멤버십+디코드: handle → (robot_idx, part_idx).
+    /// 벽/공은 부재 → 오데미지 방지(둘 다 멤버인 쌍만 데미지).
+    part_map: HashMap<ColliderHandle, (usize, usize)>,
+    /// 로봇별 부위 HP·파손 다운 상태(결정적 순수 로직 combat.rs).
+    combat: Vec<CombatState>,
     pub score: (u32, u32),
     pub time: f32,
 }
@@ -88,7 +120,10 @@ impl PhysicsWorld {
         );
 
         // 로봇 2대 (배치는 world::KICKOFF 단일 소스)
+        // 각 로봇 = 부위별 자식 콜라이더 복합 바디. user_data 태깅 + part_map 멤버십.
         let mut robots = Vec::new();
+        let mut part_map: HashMap<ColliderHandle, (usize, usize)> = HashMap::new();
+        let mut combat = Vec::new();
         for (i, &(x, rot)) in KICKOFF.iter().enumerate() {
             let rb = bodies.insert(
                 RigidBodyBuilder::dynamic()
@@ -102,11 +137,19 @@ impl PhysicsWorld {
                     .additional_mass(stats[i].mass)
                     .build(),
             );
-            colliders.insert_with_parent(
-                ColliderBuilder::cuboid(ROBOT_HX, ROBOT_HY).build(),
-                rb,
-                &mut bodies,
-            );
+            for (p, &(hx, hy, ox, oy)) in PART_SHAPES.iter().enumerate() {
+                let ch = colliders.insert_with_parent(
+                    ColliderBuilder::cuboid(hx, hy)
+                        .translation(vector![ox, oy])
+                        .active_events(ActiveEvents::COLLISION_EVENTS)
+                        .user_data(tag(i, p))
+                        .build(),
+                    rb,
+                    &mut bodies,
+                );
+                part_map.insert(ch, (i, p));
+            }
+            combat.push(CombatState::new(&part_hps(stats[i].hp)));
             robots.push(rb);
         }
 
@@ -130,9 +173,17 @@ impl PhysicsWorld {
             robots,
             stats: stats.to_vec(),
             preset_ids: preset_ids.to_vec(),
+            part_map,
+            combat,
             score: (0, 0),
             time: 0.0,
         }
+    }
+
+    /// 로봇당 부위 콜라이더 수(테스트/디버그).
+    #[cfg(test)]
+    pub fn robot_part_count(&self) -> usize {
+        NUM_PARTS
     }
 
     fn apply_controls(&mut self, controls: &[ControlOutput]) {
@@ -252,6 +303,16 @@ fn to_vec2(v: &Vector<Real>) -> Vec2 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn robot_has_multiple_tagged_part_colliders() {
+        let w = PhysicsWorld::new_kickoff();
+        // 로봇당 부위 콜라이더 ≥2 (복합 바디)
+        assert!(w.robot_part_count() >= 2, "로봇당 부위 콜라이더 ≥2");
+        // part_map 멤버십 = 로봇 수 × 부위 수, 모두 유효한 (robot,part) 디코드
+        assert_eq!(w.part_map.len(), 2 * w.robot_part_count());
+        assert!(w.part_map.values().all(|&(r, p)| r < 2 && p < NUM_PARTS));
+    }
 
     #[test]
     fn kickoff_world_has_ball_and_two_robots_in_bounds() {
