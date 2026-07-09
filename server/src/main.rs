@@ -4,6 +4,7 @@ mod control;
 mod loop_runner;
 mod net;
 mod physics;
+mod replay;
 
 use accumulator::Accumulator;
 use control::{ChaseBallAi, Controller};
