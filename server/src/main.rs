@@ -59,10 +59,10 @@ impl SlotControllers {
         match uplink {
             Uplink::Join(team) => {
                 let i = Self::slot_index(team);
-                if let Some(existing) = self.owner[i] {
-                    if existing != sid {
-                        return; // 슬롯 경합: 거부
-                    }
+                // 대상 슬롯이 이미 점유돼 있으면 컨트롤러 재생성 없이 종료:
+                // 다른 세션이면 경합 거부, 같은 세션이면 멱등(보유 입력 보존).
+                if self.owner[i].is_some() {
+                    return;
                 }
                 // 같은 세션이 다른 슬롯을 이미 잡고 있었다면 그쪽은 AI로 되돌린다
                 // (한 세션 = 최대 한 슬롯).
@@ -227,5 +227,43 @@ mod tests {
             ball: &ball,
         });
         assert_eq!(decided2.thrust, 1.0, "타 세션 입력은 반영되면 안 됨");
+    }
+
+    #[test]
+    fn rejoin_owned_slot_preserves_input() {
+        let mut slots = SlotControllers::new_ai();
+        slots.apply(Uplink::Join(Team::Blue), 1);
+        slots.apply(
+            Uplink::Input(ControlOutput {
+                thrust: 1.0,
+                turn: 0.0,
+            }),
+            1,
+        );
+        // 같은 세션이 이미 점유한 슬롯에 재-join → 컨트롤러 재생성 없이 입력 보존.
+        slots.apply(Uplink::Join(Team::Blue), 1);
+        let robot = world::RobotState {
+            id: Team::Blue,
+            pos: world::Vec2 { x: 0.0, y: 0.0 },
+            rot: 0.0,
+            vel: world::Vec2 { x: 0.0, y: 0.0 },
+            robot: String::new(),
+            parts: Vec::new(),
+            down: world::Down::default(),
+            st: Vec::new(),
+        };
+        let ball = world::BallState {
+            pos: world::Vec2 { x: 0.0, y: 0.0 },
+            vel: world::Vec2 { x: 0.0, y: 0.0 },
+        };
+        let hc = slots.ctrls[0]
+            .as_any_mut()
+            .downcast_mut::<HumanController>()
+            .unwrap();
+        let out = hc.decide(&world::GameView {
+            me: &robot,
+            ball: &ball,
+        });
+        assert_eq!(out.thrust, 1.0, "같은 슬롯 재-join 시 보유 입력 보존");
     }
 }
