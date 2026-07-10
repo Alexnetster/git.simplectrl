@@ -1,5 +1,7 @@
 //! 전투/데미지 순수 로직 (결정적, I/O 없음). 충돌 감지는 physics.rs의 경계.
-//! attack/defense는 **로봇 총합**(3b) — 부위별 세분화·취약도 항은 Plan 3c 여지.
+//! attack/defense는 **로봇 총합**(3b) — 부위별 세분화·취약도 항은 Plan 3c+ 여지.
+//! effect 프로필(kb_w/stun_w/dmg_w)은 3c에서 배선 완료: 넉백/스턴은 임계 이상일 때,
+//! dmg_w 유래 데미지는 damage_on_contact(3b) 결과에 **가산**으로 physics.rs에서 적용된다(KB-34).
 
 use crate::parts::StatSet;
 

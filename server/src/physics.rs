@@ -272,16 +272,16 @@ impl PhysicsWorld {
         for ((ra, pa), (rb, pb)) in hits {
             // impact = 두 로봇 바디 상대 linvel 크기(ADR-009 접촉 임펄스의 의도적 간소화).
             let impact = self.relative_speed(ra, rb);
-            // 데미지: 기존 attack/defense 모델 유지.
-            let dmg_a = crate::combat::damage_on_contact(&self.stats[rb], &self.stats[ra], impact);
-            let dmg_b = crate::combat::damage_on_contact(&self.stats[ra], &self.stats[rb], impact);
-            self.combat[ra].apply_damage(pa, dmg_a);
-            self.combat[rb].apply_damage(pb, dmg_b);
-            // 넉백/스턴: 공격 로봇의 effect 프로필 × impact × 피격 로봇 저항(방어).
+            // 넉백/스턴/effect데미지: 공격 로봇의 effect 프로필 × impact × 피격 로봇 저항(방어).
             let eff_on_b =
                 crate::combat::resolve_effects(&self.effect_profile(ra), impact, self.defense_of(rb));
             let eff_on_a =
                 crate::combat::resolve_effects(&self.effect_profile(rb), impact, self.defense_of(ra));
+            // 데미지: 기존 attack/defense 모델(3b) + effect 프로필 dmg_w(3c, 가산). KB-34.
+            let dmg_a = crate::combat::damage_on_contact(&self.stats[rb], &self.stats[ra], impact);
+            let dmg_b = crate::combat::damage_on_contact(&self.stats[ra], &self.stats[rb], impact);
+            self.combat[ra].apply_damage(pa, dmg_a + eff_on_a.damage);
+            self.combat[rb].apply_damage(pb, dmg_b + eff_on_b.damage);
             // 스턴(입력 무시 상태). 몸체는 동적 유지 → 넉백은 여전히 이동시킴.
             if eff_on_b.stun > 0.0 {
                 self.combat[rb].apply_stun(eff_on_b.stun);
@@ -570,6 +570,82 @@ mod tests {
         assert!(
             max_speed_seen > 10.5,
             "넉백 임펄스로 max_speed를 초과하는 속도가 관측되어야 함 (got {max_speed_seen})"
+        );
+    }
+
+    #[test]
+    fn effect_profile_damage_is_applied_additively_on_collision() {
+        use crate::parts::StatSet;
+        // attack=0 → damage_on_contact(3b 모델)은 항상 0. dmg_w>0만으로도
+        // 충돌 시 HP가 깎여야 한다(eff.damage 가산 배선 검증, KB-34 Fix1).
+        let dmg_only = StatSet {
+            max_speed: 10.0,
+            accel: 20.0,
+            turn_rate: 1.0,
+            mass: 1.0,
+            attack: 0.0,
+            defense: 3.0,
+            hp: 2000.0,
+            dmg_w: 5.0,
+            ..Default::default()
+        };
+        let mut w = PhysicsWorld::new_kickoff_with([dmg_only, dmg_only], [String::new(), String::new()]);
+        // 공을 치워 로봇끼리만 충돌
+        w.set_ball_for_test(vector![0.0, 3.0], vector![0.0, 0.0]);
+        // 두 로봇을 마주보게 근접 배치
+        w.set_robot_for_test(0, vector![-0.4, 0.0], 0.0);
+        w.set_robot_for_test(1, vector![0.4, 0.0], std::f32::consts::PI);
+        let before = (w.hp_ratio_min(0), w.hp_ratio_min(1));
+        let toward = [ControlOutput {
+            thrust: 1.0,
+            turn: 0.0,
+        }; 2];
+        for _ in 0..120 {
+            w.step(&toward);
+        }
+        let after = (w.hp_ratio_min(0), w.hp_ratio_min(1));
+        assert!(
+            after.0 < before.0 && after.1 < before.1,
+            "attack=0이어도 dmg_w 효과데미지가 가산 적용돼야 함 (before {before:?} after {after:?})"
+        );
+    }
+
+    #[test]
+    fn real_preset_collision_triggers_live_knockback_or_stun() {
+        // KB-34 Fix3: 손으로 짠 StatSet이 아니라 실제 카탈로그 프리셋(striker/guard)만으로
+        // 넉백/스턴이 실전 매치에서 실제로 발동하는지 증명한다(test-force 훅 미사용).
+        use crate::parts::{aggregate, catalog};
+        let cat = catalog();
+        let mut w = PhysicsWorld::new_kickoff_with(
+            [aggregate(&cat, "striker"), aggregate(&cat, "guard")],
+            ["striker".to_string(), "guard".to_string()],
+        );
+        // 공을 치워 로봇끼리만 충돌
+        w.set_ball_for_test(vector![0.0, 3.0], vector![0.0, 0.0]);
+        // 두 로봇을 마주보게 근접 배치하고 정면으로 세게 부딪히게 한다.
+        w.set_robot_for_test(0, vector![-0.4, 0.0], 0.0);
+        w.set_robot_for_test(1, vector![0.4, 0.0], std::f32::consts::PI);
+        let toward = [ControlOutput {
+            thrust: 1.0,
+            turn: 0.0,
+        }; 2];
+        let mut stunned_seen = false;
+        let mut max_speed_seen: f32 = 0.0;
+        let max_speed_cap = aggregate(&cat, "striker")
+            .max_speed
+            .max(aggregate(&cat, "guard").max_speed);
+        for _ in 0..180 {
+            w.step(&toward);
+            if w.is_stunned_for_test(0) || w.is_stunned_for_test(1) {
+                stunned_seen = true;
+            }
+            let v = w.snapshot().robots[1].vel;
+            max_speed_seen = max_speed_seen.max((v.x * v.x + v.y * v.y).sqrt());
+        }
+        assert!(
+            stunned_seen || max_speed_seen > max_speed_cap + 0.5,
+            "실제 프리셋(striker/guard) 정면 충돌에서 넉백 또는 스턴이 발동해야 함 \
+             (stunned_seen={stunned_seen}, max_speed_seen={max_speed_seen}, cap={max_speed_cap})"
         );
     }
 

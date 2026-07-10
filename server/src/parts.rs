@@ -110,6 +110,8 @@ pub fn catalog() -> Catalog {
             mass: 1.0,
             hp: 40.0,
             defense: 6.0,
+            // 무거운 몸통 → 스턴 성향(Plan 3c 초기값, 밸런싱 대상).
+            stun_w: 0.5,
             ..Default::default()
         },
     );
@@ -120,6 +122,8 @@ pub fn catalog() -> Catalog {
             mass: 0.7,
             hp: 30.0,
             defense: 4.0,
+            // 가볍고 예리한 몸통 → 데미지 성향(Plan 3c 초기값, 밸런싱 대상).
+            dmg_w: 0.4,
             ..Default::default()
         },
     );
@@ -143,6 +147,8 @@ pub fn catalog() -> Catalog {
     let fore_std = StatSet {
         accel: 1.0,
         attack: 2.5,
+        // 공격 부위(앞다리) → 넉백 성향(Plan 3c 초기값, 밸런싱 대상).
+        kb_w: 0.6,
         ..Default::default()
     };
     add("fore-std-l", Slot::ForelegL, fore_std);
