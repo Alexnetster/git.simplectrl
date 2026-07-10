@@ -2,6 +2,7 @@ mod accumulator;
 mod world;
 mod combat;
 mod control;
+mod human;
 mod loop_runner;
 mod net;
 mod parts;
