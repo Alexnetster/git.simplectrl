@@ -244,7 +244,7 @@ impl PhysicsWorld {
         );
         self.apply_collision_damage(&cr);
         for c in &mut self.combat {
-            c.tick_down();
+            c.tick_status();
         }
         self.check_goal();
         self.time += DT;

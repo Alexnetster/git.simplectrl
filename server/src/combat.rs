@@ -61,6 +61,8 @@ pub struct CombatState {
     max: Vec<f32>,
     hp: Vec<f32>,
     down_timer: u32,
+    /// 스턴 남은 시간(초). 파손 다운과 달리 짧고 HP와 무관한 입력 무시 상태.
+    stun_timer: f32,
 }
 
 impl CombatState {
@@ -69,11 +71,22 @@ impl CombatState {
             max: max_hp.to_vec(),
             hp: max_hp.to_vec(),
             down_timer: 0,
+            stun_timer: 0.0,
         }
     }
 
     pub fn broken(&self) -> bool {
         self.down_timer > 0
+    }
+
+    /// 스턴 중인지(입력 무시 판정용).
+    pub fn stunned(&self) -> bool {
+        self.stun_timer > 0.0
+    }
+
+    /// 스턴 부여. 갱신은 최대값(더 길면) — 누적 아님.
+    pub fn apply_stun(&mut self, secs: f32) {
+        self.stun_timer = self.stun_timer.max(secs);
     }
 
     #[cfg(test)]
@@ -124,6 +137,14 @@ impl CombatState {
                 self.hp = self.max.clone();
             }
         }
+    }
+
+    /// 매 tick: 스턴 타이머 감소 + 기존 다운 타이머 진행(스턴·다운 함께 진행).
+    pub fn tick_status(&mut self) {
+        if self.stun_timer > 0.0 {
+            self.stun_timer = (self.stun_timer - crate::world::DT).max(0.0);
+        }
+        self.tick_down();
     }
 
     /// 강제 파손 다운(테스트 전용).
@@ -194,6 +215,20 @@ mod tests {
         // 저항↑ → 효과↓
         let resisted = resolve_effects(&prof, 2.0, 4.0);
         assert!(resisted.damage < hard.damage);
+    }
+
+    #[test]
+    fn stun_blocks_input_for_duration_then_clears() {
+        let mut cs = CombatState::new(&[40.0]);
+        assert!(!cs.stunned());
+        cs.apply_stun(0.5); // 0.5초
+        assert!(cs.stunned());
+        // dt 진행하면 언젠가 해제
+        let steps = (0.5 / crate::world::DT).ceil() as u32 + 1;
+        for _ in 0..steps {
+            cs.tick_status();
+        }
+        assert!(!cs.stunned());
     }
 
     #[test]
