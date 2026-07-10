@@ -2,12 +2,10 @@ use crate::world::{ControlOutput, Team};
 use serde_json::Value;
 
 /// WS 접속 세션 식별자. `net.rs`가 `AtomicU64` 카운터로 발급한다.
-/// (Task 3에서 net.rs가, Task 4에서 SlotControllers가 소비)
-#[allow(dead_code)]
 pub type SessionId = u64;
 
 /// WS 업링크(클라 → 서버) 파싱 결과. 로드아웃은 4b로 이연(join엔 slot만).
-/// (Task 3/4에서 net.rs/main.rs가 소비)
+/// (변형 내부 필드는 Task 4의 SlotControllers.apply가 소비 — 그 전까진 미사용 경고 억제)
 #[allow(dead_code)]
 #[derive(Clone)]
 pub enum Uplink {
@@ -19,7 +17,6 @@ pub enum Uplink {
 /// 업링크 JSON 문자열 파싱. 미지 타입/기형 JSON은 조용히 `None`(무시).
 /// 서버 권위: 여기선 스키마만 검증하고, 상태 적합성(다운/스턴 중 무시 등)은
 /// 이미 physics 쪽에서 처리한다.
-#[allow(dead_code)]
 pub fn parse_uplink(s: &str) -> Option<Uplink> {
     let v: Value = serde_json::from_str(s).ok()?;
     match v.get("t")?.as_str()? {

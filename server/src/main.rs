@@ -15,13 +15,14 @@ use accumulator::Accumulator;
 use control::{ChaseBallAi, Controller};
 use physics::PhysicsWorld;
 use std::sync::Arc;
-use tokio::sync::watch;
+use tokio::sync::{mpsc, watch};
 use tokio::time::{interval, Duration, Instant};
 use world::GameState;
 
 #[tokio::main]
 async fn main() {
     let (tx, rx) = watch::channel(GameState::new_kickoff());
+    let (uplink_tx, mut uplink_rx) = mpsc::unbounded_channel::<(session::SessionId, session::Uplink)>();
 
     // 물리 루프: ~120Hz 프레임을 실제 경과 시간으로 계측해 고정스텝 누산기에
     // 먹이고, 누산된 만큼 물리를 전진(고정 dt). 2스텝마다(=30Hz) 상태 발행.
@@ -43,6 +44,8 @@ async fn main() {
         let mut since_pub: u32 = 0;
         loop {
             ticker.tick().await;
+            // 업링크 논블로킹 드레인. (Task 4에서 SlotControllers.apply로 교체)
+            while let Ok((_sid, _uplink)) = uplink_rx.try_recv() {}
             let now = Instant::now();
             let elapsed = now.duration_since(last).as_secs_f32();
             last = now;
@@ -58,5 +61,5 @@ async fn main() {
         }
     });
 
-    net::serve(Arc::new(rx)).await;
+    net::serve(Arc::new(rx), uplink_tx).await;
 }
