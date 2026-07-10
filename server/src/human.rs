@@ -1,5 +1,6 @@
 use crate::control::Controller;
 use crate::world::{ControlOutput, GameView};
+use std::any::Any;
 
 /// 사람이 조작하는 슬롯의 컨트롤러. 최근 입력을 보유했다가 그대로 반환한다.
 /// (다운/스턴 중 입력 무시는 physics 쪽에서 이미 처리 — 여기선 순수 보유/반환만.)
@@ -9,14 +10,17 @@ pub struct HumanController {
 }
 
 impl HumanController {
-    /// mpsc로 들어온 최신 입력을 갱신. (Task 4: SlotControllers가 연결)
-    #[allow(dead_code)]
+    /// mpsc로 들어온 최신 입력을 갱신. `SlotControllers.apply`가 호출.
     pub fn set(&mut self, input: ControlOutput) {
         self.last = input;
     }
 }
 
 impl Controller for HumanController {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
     fn decide(&mut self, _view: &GameView) -> ControlOutput {
         self.last
     }

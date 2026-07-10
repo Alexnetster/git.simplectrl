@@ -5,8 +5,6 @@ use serde_json::Value;
 pub type SessionId = u64;
 
 /// WS 업링크(클라 → 서버) 파싱 결과. 로드아웃은 4b로 이연(join엔 slot만).
-/// (변형 내부 필드는 Task 4의 SlotControllers.apply가 소비 — 그 전까진 미사용 경고 억제)
-#[allow(dead_code)]
 #[derive(Clone)]
 pub enum Uplink {
     Join(Team),

@@ -1,13 +1,21 @@
 use crate::world::*;
+use std::any::Any;
 
 /// 인간/AI/스크립트 공용 인터페이스 (아키텍처 주춧돌)
 pub trait Controller: Send {
     fn decide(&mut self, view: &GameView) -> ControlOutput;
+    /// 슬롯 컨트롤러 스왑(AI↔사람) 시 구체 타입으로 downcast하기 위함
+    /// (예: `SlotControllers`가 사람 슬롯에 최신 입력을 주입).
+    fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
 pub struct ChaseBallAi;
 
 impl Controller for ChaseBallAi {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
     fn decide(&mut self, view: &GameView) -> ControlOutput {
         let dx = view.ball.pos.x - view.me.pos.x;
         let dy = view.ball.pos.y - view.me.pos.y;
