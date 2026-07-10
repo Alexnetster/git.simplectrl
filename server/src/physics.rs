@@ -8,6 +8,17 @@ const WALL_T: f32 = 0.2; // 벽 두께
 const BALL_R: f32 = 0.2;
 const RESTITUTION: f32 = 0.85;
 
+/// 충돌 그룹(KB-43): 골 입구는 공만 통과시키고 로봇은 막는 "펜스"가 필요해
+/// 멤버십별로 필터를 분리한다. 상호작용 규칙(rapier):
+/// `(A.mem & B.filter)!=0 && (B.mem & A.filter)!=0`.
+mod groups {
+    use rapier2d::prelude::Group;
+    pub const BALL: Group = Group::GROUP_1;
+    pub const ROBOT: Group = Group::GROUP_2;
+    pub const SOLID: Group = Group::GROUP_3; // 상/하 벽 + 좌우 벽 조각(기존 고정 경계)
+    pub const GOALFENCE: Group = Group::GROUP_4; // 골 입구를 메우는 로봇 전용 펜스
+}
+
 /// 로봇 부위 수. 부위별 자식 콜라이더(복합 바디)로 구성.
 const NUM_PARTS: usize = 3;
 /// 부위명(스냅샷 `parts`용). PART_SHAPES/PART_HP_WEIGHT와 index 정합.
@@ -95,12 +106,16 @@ impl PhysicsWorld {
         let hw = FIELD_W / 2.0;
         let hh = FIELD_H / 2.0;
 
+        // SOLID(상/하/좌우 고정 경계)는 모두와 충돌(ALL) — 공/로봇 모두 막아야 함.
+        let solid_groups = InteractionGroups::new(groups::SOLID, Group::ALL);
+
         // 상/하 벽 (고정)
         for (hx, hy, x, y) in [(hw, WALL_T, 0.0, hh), (hw, WALL_T, 0.0, -hh)] {
             colliders.insert(
                 ColliderBuilder::cuboid(hx, hy)
                     .translation(vector![x, y])
                     .restitution(RESTITUTION)
+                    .collision_groups(solid_groups)
                     .build(),
             );
         }
@@ -114,6 +129,7 @@ impl PhysicsWorld {
                     ColliderBuilder::cuboid(WALL_T, seg)
                         .translation(vector![side, sy])
                         .restitution(RESTITUTION)
+                        .collision_groups(solid_groups)
                         .build(),
                 );
             }
@@ -126,8 +142,14 @@ impl PhysicsWorld {
                 .linear_damping(0.4)
                 .build(),
         );
+        // BALL: SOLID(벽) + ROBOT(드리블)과는 충돌하되 GOALFENCE는 무시(골 입구 통과).
+        let ball_groups =
+            InteractionGroups::new(groups::BALL, groups::SOLID | groups::ROBOT);
         colliders.insert_with_parent(
-            ColliderBuilder::ball(BALL_R).restitution(RESTITUTION).build(),
+            ColliderBuilder::ball(BALL_R)
+                .restitution(RESTITUTION)
+                .collision_groups(ball_groups)
+                .build(),
             ball,
             &mut bodies,
         );
@@ -150,12 +172,18 @@ impl PhysicsWorld {
                     .additional_mass(stats[i].mass)
                     .build(),
             );
+            // ROBOT: 전부와 충돌(SOLID/ROBOT/GOALFENCE/BALL) — 전투/드리블/펜스 모두 보존.
+            let robot_groups = InteractionGroups::new(
+                groups::ROBOT,
+                groups::SOLID | groups::ROBOT | groups::GOALFENCE | groups::BALL,
+            );
             for (p, &(hx, hy, ox, oy)) in PART_SHAPES.iter().enumerate() {
                 let ch = colliders.insert_with_parent(
                     ColliderBuilder::cuboid(hx, hy)
                         .translation(vector![ox, oy])
                         .active_events(ActiveEvents::COLLISION_EVENTS)
                         .user_data(tag(i, p))
+                        .collision_groups(robot_groups)
                         .build(),
                     rb,
                     &mut bodies,
@@ -164,6 +192,20 @@ impl PhysicsWorld {
             }
             combat.push(CombatState::new(&part_hps(stats[i].hp)));
             robots.push(rb);
+        }
+
+        // 골 입구 "펜스"(KB-43): 골 입구 틈을 메우되 로봇만 막고 공은 통과시킨다.
+        // GOALFENCE.filter=ROBOT → 로봇과만 상호작용, 공(BALL 멤버십)과는 상호작용 없음.
+        // (공/로봇 핸들 생성 순서를 기존과 동일하게 유지하기 위해 펜스는 맨 마지막에 삽입)
+        let fence_groups = InteractionGroups::new(groups::GOALFENCE, groups::ROBOT);
+        for side in [hw, -hw] {
+            colliders.insert(
+                ColliderBuilder::cuboid(WALL_T, GOAL_W / 2.0)
+                    .translation(vector![side, 0.0])
+                    .restitution(RESTITUTION)
+                    .collision_groups(fence_groups)
+                    .build(),
+            );
         }
 
         PhysicsWorld {
@@ -778,6 +820,13 @@ mod tests {
     #[test]
     fn ball_driven_into_right_goal_scores_blue() {
         let mut w = PhysicsWorld::new_kickoff();
+        // KB-43: 골 입구 펜스 도입 전에는 robot1(킥오프 x=3.0, 공의 직선 경로상)이
+        // 공에 맞아 넉백으로 필드 밖까지 날아가며 "우연히" 경로를 비켜줬다(바로 그 탈출
+        // 버그). 펜스가 로봇을 담아내는 지금은 robot1이 골 입구에 멈춰 서서 슛을
+        // 가로막으므로, 이 테스트 본연의 목적(공이 펜스를 통과해 득점)만 검증하도록
+        // robot1을 공의 경로 밖으로 옮겨 격리한다(다른 테스트의 set_ball/robot_for_test
+        // 격리 패턴과 동일).
+        w.set_robot_for_test(1, vector![3.0, 3.0], std::f32::consts::PI);
         w.kick_ball_for_test(vector![40.0, 0.0]); // 오른쪽으로 강하게
         let mut scored = false;
         for _ in 0..300 {
@@ -861,6 +910,31 @@ mod tests {
         let d0 = (s.robots[0].pos.x - x0[0]).abs();
         let d1 = (s.robots[1].pos.x - x0[1]).abs();
         assert!(d0 != d1, "스탯이 다르면 이동 거리가 달라야 함");
+    }
+
+    #[test]
+    fn robot_cannot_escape_through_goal_mouth() {
+        // 골 입구(y∈[-GOAL_W/2, GOAL_W/2]) 정중앙에 로봇을 놓고 오른쪽으로 강하게 전진.
+        // 공은 이 틈을 빠져나가야 득점이 성립하지만, 로봇은 펜스에 막혀야 한다.
+        let mut w = PhysicsWorld::new_kickoff();
+        w.set_ball_for_test(vector![0.0, 3.0], vector![0.0, 0.0]); // 공은 치워둠(간섭 배제)
+        w.set_robot_for_test(0, vector![FIELD_W / 2.0 - 1.0, 0.0], 0.0);
+        let toward = [
+            ControlOutput {
+                thrust: 1.0,
+                turn: 0.0,
+            },
+            ControlOutput::default(),
+        ];
+        let mut max_x: f32 = 0.0;
+        for _ in 0..120 {
+            w.step(&toward);
+            max_x = max_x.max(w.snapshot().robots[0].pos.x);
+        }
+        assert!(
+            max_x <= FIELD_W / 2.0 + 0.5,
+            "로봇은 골 입구 펜스에 막혀 필드 밖으로 나가면 안 됨 (got x={max_x})"
+        );
     }
 
     #[test]
