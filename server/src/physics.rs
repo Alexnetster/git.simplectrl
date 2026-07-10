@@ -201,8 +201,9 @@ impl PhysicsWorld {
 
     fn apply_controls(&mut self, controls: &[ControlOutput]) {
         for (i, (h, c)) in self.robots.iter().zip(controls.iter()).enumerate() {
-            // 파손 다운 로봇은 입력 무시(행동불능). 잔여 속도는 물리(감쇠)로 소멸.
-            if self.combat[i].broken() {
+            // 파손 다운 또는 스턴 로봇은 입력 무시(행동불능). 몸체는 동적 유지 →
+            // 넉백 임펄스는 여전히 적용됨(입력만 차단). 잔여 속도는 물리(감쇠)로 소멸.
+            if self.combat[i].broken() || self.combat[i].stunned() {
                 continue;
             }
             let st = &self.stats[i];
@@ -267,15 +268,56 @@ impl PhysicsWorld {
         }
         // 2) 결정성 정렬
         hits.sort_by_key(|&((ra, pa), (rb, pb))| (ra, rb, pa, pb));
-        // 3) 상호 데미지 적용
+        // 3) 상호 효과 적용(데미지=3b 모델, 넉백/스턴=effect 프로필)
         for ((ra, pa), (rb, pb)) in hits {
             // impact = 두 로봇 바디 상대 linvel 크기(ADR-009 접촉 임펄스의 의도적 간소화).
             let impact = self.relative_speed(ra, rb);
+            // 데미지: 기존 attack/defense 모델 유지.
             let dmg_a = crate::combat::damage_on_contact(&self.stats[rb], &self.stats[ra], impact);
             let dmg_b = crate::combat::damage_on_contact(&self.stats[ra], &self.stats[rb], impact);
             self.combat[ra].apply_damage(pa, dmg_a);
             self.combat[rb].apply_damage(pb, dmg_b);
+            // 넉백/스턴: 공격 로봇의 effect 프로필 × impact × 피격 로봇 저항(방어).
+            let eff_on_b =
+                crate::combat::resolve_effects(&self.effect_profile(ra), impact, self.defense_of(rb));
+            let eff_on_a =
+                crate::combat::resolve_effects(&self.effect_profile(rb), impact, self.defense_of(ra));
+            // 스턴(입력 무시 상태). 몸체는 동적 유지 → 넉백은 여전히 이동시킴.
+            if eff_on_b.stun > 0.0 {
+                self.combat[rb].apply_stun(eff_on_b.stun);
+            }
+            if eff_on_a.stun > 0.0 {
+                self.combat[ra].apply_stun(eff_on_a.stun);
+            }
+            // 넉백 임펄스: 서로 밀어냄(a→b 방향으로 b, 반대로 a). 위치 동일 시 skip(NaN 방지).
+            let pos_a = *self.bodies[self.robots[ra]].translation();
+            let pos_b = *self.bodies[self.robots[rb]].translation();
+            if eff_on_b.knockback > 0.0 {
+                if let Some(dir) = unit_dir(pos_b - pos_a) {
+                    self.bodies[self.robots[rb]].apply_impulse(dir * eff_on_b.knockback, true);
+                }
+            }
+            if eff_on_a.knockback > 0.0 {
+                if let Some(dir) = unit_dir(pos_a - pos_b) {
+                    self.bodies[self.robots[ra]].apply_impulse(dir * eff_on_a.knockback, true);
+                }
+            }
         }
+    }
+
+    /// 로봇 r의 effect 프로필(StatSet 가중치 유래). 순수.
+    fn effect_profile(&self, r: usize) -> crate::combat::EffectProfile {
+        let s = &self.stats[r];
+        crate::combat::EffectProfile {
+            knockback: s.kb_w,
+            stun: s.stun_w,
+            damage: s.dmg_w,
+        }
+    }
+
+    /// 로봇 r의 방어(effect 저항).
+    fn defense_of(&self, r: usize) -> f32 {
+        self.stats[r].defense
     }
 
     /// 두 로봇 바디의 상대 속도 크기.
@@ -348,6 +390,12 @@ impl PhysicsWorld {
         self.combat[i].force_down();
     }
 
+    /// 로봇 i가 스턴 중인지(테스트 전용).
+    #[cfg(test)]
+    pub fn is_stunned_for_test(&self, i: usize) -> bool {
+        self.combat[i].stunned()
+    }
+
     pub fn snapshot(&self) -> GameState {
         let b = &self.bodies[self.ball];
         let ball = BallState {
@@ -395,6 +443,16 @@ impl PhysicsWorld {
 
 fn to_vec2(v: &Vector<Real>) -> Vec2 {
     Vec2 { x: v.x, y: v.y }
+}
+
+/// 결정적 단위벡터. 길이가 0에 가까우면 None(넉백 skip으로 NaN 방지).
+fn unit_dir(v: Vector<Real>) -> Option<Vector<Real>> {
+    let n = (v.x * v.x + v.y * v.y).sqrt();
+    if n > 1e-6 {
+        Some(vector![v.x / n, v.y / n])
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
@@ -454,6 +512,54 @@ mod tests {
         assert!(
             after.0 < before.0 && after.1 < before.1,
             "충돌 시 양쪽 부위 HP 감소 (before {before:?} after {after:?})"
+        );
+    }
+
+    #[test]
+    fn strong_collision_applies_knockback_and_stun() {
+        use crate::parts::StatSet;
+        // 넉백/스턴 성향이 강하고 방어가 낮은 로봇 둘을 정면 충돌시킨다.
+        let brawler = StatSet {
+            max_speed: 10.0,
+            accel: 20.0,
+            turn_rate: 1.0,
+            mass: 1.0,
+            attack: 2.0,
+            defense: 3.0,
+            hp: 2000.0,
+            kb_w: 40.0,
+            stun_w: 3.0,
+            dmg_w: 1.0,
+            ..Default::default()
+        };
+        let mut w = PhysicsWorld::new_kickoff_with(
+            [brawler, brawler],
+            [String::new(), String::new()],
+        );
+        // 공을 치워 로봇끼리만 충돌
+        w.set_ball_for_test(vector![0.0, 3.0], vector![0.0, 0.0]);
+        // 두 로봇을 마주보게 근접 배치
+        w.set_robot_for_test(0, vector![-0.4, 0.0], 0.0);
+        w.set_robot_for_test(1, vector![0.4, 0.0], std::f32::consts::PI);
+        let toward = [ControlOutput {
+            thrust: 1.0,
+            turn: 0.0,
+        }; 2];
+        let mut stunned_seen = false;
+        let mut max_speed_seen: f32 = 0.0;
+        for _ in 0..120 {
+            w.step(&toward);
+            if w.is_stunned_for_test(1) || w.is_stunned_for_test(0) {
+                stunned_seen = true;
+            }
+            let v = w.snapshot().robots[1].vel;
+            max_speed_seen = max_speed_seen.max((v.x * v.x + v.y * v.y).sqrt());
+        }
+        assert!(stunned_seen, "강한 충돌은 스턴을 유발해야 함");
+        // 넉백으로 속도가 튐(입력만으로는 max_speed=10을 넘지 못하므로 간접 확인)
+        assert!(
+            max_speed_seen > 10.5,
+            "넉백 임펄스로 max_speed를 초과하는 속도가 관측되어야 함 (got {max_speed_seen})"
         );
     }
 
