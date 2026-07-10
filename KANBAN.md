@@ -21,7 +21,7 @@
 | **Plan 2 — 물리/충돌(rapier2d)** ✅완료 | 밀기 드리블·벽 반사·골 센서·누산기·리플레이 | [계획](docs/superpowers/plans/2026-07-08-physics-collision.md) |
 | **Plan 3a — 파츠/로드아웃/스탯** ✅완료 | 파츠 조립·스탯→물리·카탈로그·비대칭 프리셋 | [계획](docs/superpowers/plans/2026-07-08-parts-loadout.md) |
 | **Plan 3b — 전투/데미지** ✅완료 | 부위 콜라이더·충돌 이벤트·상호 데미지·부위HP·파손다운 | [계획](docs/superpowers/plans/2026-07-08-combat-damage.md) |
-| **Plan 3c — 효과 선택** ⭐다음 | 넉백/스턴/데미지 effect 프로필·impact 비례 중첩 | (예정) |
+| **Plan 3c — 효과 선택** ⭐다음 | 넉백/스턴/데미지 effect 프로필·impact 비례 중첩 | [계획](docs/superpowers/plans/2026-07-08-combat-effects.md) |
 | Plan 4 — 제어 모드/입력 | 직접(키보드)·전략(마우스)·런타임 전환 | (예정) |
 | Plan 5 — 게임 흐름 | ATTRACT/SELECT/PLAYING/RESULT·슬롯 참가/인계 | (예정) |
 | Plan 6 — 랭킹 | 로봇별 승률 인메모리 | (예정) |
@@ -32,7 +32,15 @@
 
 ## Backlog
 
-**Plan 3c+** — 각 Plan 착수 시 writing-plans로 카드 추가.
+**Plan 3c — 효과 선택 (TDD 순서, [계획](docs/superpowers/plans/2026-07-08-combat-effects.md))**
+- [ ] KB-30 effect 프로필 + 효과 선택(순수) (테스트: 임팩트 비례 중첩·프로필/저항 스케일)
+- [ ] KB-31 스턴 타이머 in CombatState(순수) (테스트: 지속 후 해제) [의존: KB-30]
+- [ ] KB-32 충돌 시 넉백(임펄스)/스턴(상태)/데미지 적용 (테스트: 강한 충돌→넉백+스턴) [의존: KB-31]
+- [ ] KB-33 스냅샷 st에 stun + (선택)hit event 효과 (테스트: st에 "stun") [의존: KB-32]
+- [ ] KB-34 (선택) 부위별 취약도 계수 (테스트: 취약 부위 데미지↑) [의존: KB-32]
+- [ ] KB-35 결정성 회귀 + E2E + 문서/KANBAN [의존: KB-33]
+
+**Plan 4+** — 각 Plan 착수 시 writing-plans로 카드 추가.
 
 **남은 관찰/부채 (후속)**
 - 클라 보간 — 아직 최신 스냅샷 렌더 / 포트·URL 상수화(8090×2), 클라 재연결·try-catch / main publish 프레임당 1회(스톨 시 순간 <30Hz) / 클라 vitest 미설정
