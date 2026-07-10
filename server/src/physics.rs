@@ -396,6 +396,12 @@ impl PhysicsWorld {
         self.combat[i].stunned()
     }
 
+    /// 로봇 i를 강제 스턴(테스트 전용).
+    #[cfg(test)]
+    pub fn force_stun_for_test(&mut self, i: usize, secs: f32) {
+        self.combat[i].apply_stun(secs);
+    }
+
     pub fn snapshot(&self) -> GameState {
         let b = &self.bodies[self.ball];
         let ball = BallState {
@@ -413,6 +419,14 @@ impl PhysicsWorld {
                     .map(|p| (PART_NAMES[p].to_string(), cs.hp_ratio(p)))
                     .collect();
                 let broken = cs.broken();
+                // 상태이상 태그: 파손 다운("downed")과 스턴("stun")은 동시 가능.
+                let mut st = Vec::new();
+                if broken {
+                    st.push("downed".to_string());
+                }
+                if cs.stunned() {
+                    st.push("stun".to_string());
+                }
                 RobotState {
                     id: if i == 0 { Team::Blue } else { Team::Red },
                     pos: to_vec2(rb.translation()),
@@ -424,11 +438,7 @@ impl PhysicsWorld {
                         broken,
                         repair_in: cs.repair_in(),
                     },
-                    st: if broken {
-                        vec!["downed".to_string()]
-                    } else {
-                        Vec::new()
-                    },
+                    st,
                 }
             })
             .collect();
@@ -646,6 +656,23 @@ mod tests {
         assert!(!s2.robots[0].down.broken, "리페어 후 다운 해제");
         assert!(s2.robots[0].st.is_empty());
         assert!(w.hp_ratio_min(0) > 0.99, "리페어 시 전체 부위 HP 복구");
+    }
+
+    #[test]
+    fn snapshot_st_shows_stun() {
+        let mut w = PhysicsWorld::new_kickoff();
+        w.force_stun_for_test(1, 0.5);
+        let s = w.snapshot();
+        assert!(s.robots[1].st.iter().any(|x| x == "stun"));
+        assert!(s.robots[0].st.is_empty(), "스턴 안 된 로봇은 태그 없음");
+        // 파손 다운과 스턴 동시 표기 가능
+        w.force_break_for_test(1);
+        let s2 = w.snapshot();
+        assert!(s2.robots[1].st.iter().any(|x| x == "downed"));
+        assert!(s2.robots[1].st.iter().any(|x| x == "stun"));
+        // 와이어(JSON) 직렬화에도 실림
+        let json = serde_json::to_string(&s2).unwrap();
+        assert!(json.contains("\"stun\""));
     }
 
     #[test]
