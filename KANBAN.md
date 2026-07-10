@@ -21,8 +21,8 @@
 | **Plan 2 — 물리/충돌(rapier2d)** ✅완료 | 밀기 드리블·벽 반사·골 센서·누산기·리플레이 | [계획](docs/superpowers/plans/2026-07-08-physics-collision.md) |
 | **Plan 3a — 파츠/로드아웃/스탯** ✅완료 | 파츠 조립·스탯→물리·카탈로그·비대칭 프리셋 | [계획](docs/superpowers/plans/2026-07-08-parts-loadout.md) |
 | **Plan 3b — 전투/데미지** ✅완료 | 부위 콜라이더·충돌 이벤트·상호 데미지·부위HP·파손다운 | [계획](docs/superpowers/plans/2026-07-08-combat-damage.md) |
-| **Plan 3c — 효과 선택** ⭐다음 | 넉백/스턴/데미지 effect 프로필·impact 비례 중첩 | [계획](docs/superpowers/plans/2026-07-08-combat-effects.md) |
-| Plan 4 — 제어 모드/입력 | 직접(키보드)·전략(마우스)·런타임 전환 | (예정) |
+| **Plan 3c — 효과 선택** ✅완료 | 넉백/스턴/데미지 effect 프로필·impact 비례 중첩 | [계획](docs/superpowers/plans/2026-07-08-combat-effects.md) |
+| **Plan 4 — 제어 모드/입력** ⭐다음 | 직접(키보드)·전략(마우스)·런타임 전환 | (예정) |
 | Plan 5 — 게임 흐름 | ATTRACT/SELECT/PLAYING/RESULT·슬롯 참가/인계 | (예정) |
 | Plan 6 — 랭킹 | 로봇별 승률 인메모리 | (예정) |
 | Plan 7 — NET SIM·재연결 | 지연/지터/드랍·heartbeat·슬롯 유예 | (예정) |
@@ -32,21 +32,13 @@
 
 ## Backlog
 
-**Plan 3c — 효과 선택 (TDD 순서, [계획](docs/superpowers/plans/2026-07-08-combat-effects.md))**
-- [ ] KB-30 effect 프로필 + 효과 선택(순수) (테스트: 임팩트 비례 중첩·프로필/저항 스케일)
-- [ ] KB-31 스턴 타이머 in CombatState(순수) (테스트: 지속 후 해제) [의존: KB-30]
-- [ ] KB-32 충돌 시 넉백(임펄스)/스턴(상태)/데미지 적용 (테스트: 강한 충돌→넉백+스턴) [의존: KB-31]
-- [ ] KB-33 스냅샷 st에 stun + (선택)hit event 효과 (테스트: st에 "stun") [의존: KB-32]
-- [ ] KB-34 (선택) 부위별 취약도 계수 (테스트: 취약 부위 데미지↑) [의존: KB-32]
-- [ ] KB-35 결정성 회귀 + E2E + 문서/KANBAN [의존: KB-33]
-
 **Plan 4+** — 각 Plan 착수 시 writing-plans로 카드 추가.
 
 **남은 관찰/부채 (후속)**
 - 클라 보간 — 아직 최신 스냅샷 렌더 / 포트·URL 상수화(8090×2), 클라 재연결·try-catch / main publish 프레임당 1회(스톨 시 순간 <30Hz) / 클라 vitest 미설정
 - (Plan 3a Minor) `apply_controls` 중복 가드·테스트명 정확성·aggregate slot 유니크 assert — 코스메틱
 - (Plan 3b Minor) 리플레이 전투 해시 테스트가 대칭AI라 데미지 없이 통과 가능(메커니즘은 강제충돌 테스트로 검증됨) / 다운 로봇도 접촉 데미지 가함(물리 장애물) / PART_NAMES↔part_count 결합 debug_assert — 전부 선택
-- (Plan 3c 튜닝) impact=상대속도(post-step)·부위별 취약도·다중 부위쌍 동시 데미지
+- (Plan 3c 튜닝/후속) impact=상대속도(post-step)·**부위별 취약도(KB-34 스킵)**·다중 부위쌍 동시 데미지·**효과 가중치 본격 밸런싱**(현재 초기값만: fore-std kb 0.6 / body-std stun 0.5 / body-light dmg 0.4)
 
 ## Todo
 _(비어 있음 — Plan 3b 착수 시 채움)_
@@ -55,6 +47,14 @@ _(비어 있음 — Plan 3b 착수 시 채움)_
 _(비어 있음)_
 
 ## Done
+**Plan 3c — 효과 선택 ✅** (branch `feat/combat-damage`)
+- [x] KB-30 effect 프로필 + 임팩트 비례 중첩 선택(순수)
+- [x] KB-31 스턴 타이머(순수)
+- [x] KB-32 충돌 시 넉백(임펄스)/스턴(입력차단)/데미지 적용
+- [x] KB-33 스냅샷 st에 "stun"
+- [x] KB-34 dmg_w 가산 배선 + 카탈로그 효과값(실전 넉백/스턴 발동, 비대칭) *(부위 취약도는 스킵)*
+- [x] KB-35 검증: cargo test 33/33, debug+release warning 0, 실전 프리셋 충돌 효과 확인
+
 **Plan 3b — 전투/데미지 ✅** (branch `feat/combat-damage`)
 - [x] KB-24 데미지 공식(순수)
 - [x] KB-25 부위 HP + 파손다운/리페어(순수)
