@@ -14,6 +14,10 @@ pub struct StatSet {
     pub attack: f32,
     pub defense: f32,
     pub hp: f32,
+    // 전투 effect 프로필 성향(Plan 3c). 기본 0.0 = 효과 없음.
+    pub kb_w: f32,   // 넉백 성향
+    pub stun_w: f32, // 스턴 성향
+    pub dmg_w: f32,  // 데미지 성향
 }
 
 impl StatSet {
@@ -26,6 +30,9 @@ impl StatSet {
         self.attack += o.attack;
         self.defense += o.defense;
         self.hp += o.hp;
+        self.kb_w += o.kb_w;
+        self.stun_w += o.stun_w;
+        self.dmg_w += o.dmg_w;
     }
 }
 

@@ -15,6 +15,43 @@ pub fn damage_on_contact(attacker: &StatSet, defender: &StatSet, impact: f32) ->
     (impact.max(0.0) * (atk / def) * K).max(0.0)
 }
 
+/// 부위 effect 프로필: 넉백/스턴/데미지 성향(StatSet 가중치 유래).
+#[derive(Clone, Copy)]
+pub struct EffectProfile {
+    pub knockback: f32,
+    pub stun: f32,
+    pub damage: f32,
+}
+
+/// resolve_effects 결과: 이번 히트로 발동한 넉백/스턴/데미지 세기.
+#[derive(Clone, Copy, Default)]
+pub struct Effects {
+    pub knockback: f32,
+    pub stun: f32,
+    pub damage: f32,
+}
+
+/// 임팩트 임계(튜닝): 이 이상이어야 해당 효과 발동.
+const T_KNOCK: f32 = 0.8;
+const T_STUN: f32 = 1.5;
+
+/// 결정적. 임팩트 비례 중첩 + 프로필/저항 스케일.
+/// 데미지는 항상(임팩트 비례), 넉백은 impact≥T_KNOCK, 스턴은 impact≥T_STUN일 때만 발동.
+/// 세기 = weight × impact / resistance.max(1.0). 저항 하한으로 폭주 방지.
+pub fn resolve_effects(p: &EffectProfile, impact: f32, resistance: f32) -> Effects {
+    let i = impact.max(0.0);
+    let r = resistance.max(1.0);
+    let mut e = Effects::default();
+    e.damage = p.damage * i / r;
+    if i >= T_KNOCK {
+        e.knockback = p.knockback * i / r;
+    }
+    if i >= T_STUN {
+        e.stun = p.stun * i / r;
+    }
+    e
+}
+
 /// 파손 다운 지속 틱(3초 @60Hz). 튜닝 대상.
 const REPAIR_TICKS: u32 = 180;
 
@@ -138,6 +175,25 @@ mod tests {
         assert!(!cs.broken(), "일정 시간 뒤 전체 리페어");
         assert!(cs.hp_ratio(0) > 0.99, "리페어 시 부위0 HP 복구");
         assert!(cs.hp_ratio(1) > 0.99, "리페어 시 전체 부위 복구");
+    }
+
+    #[test]
+    fn effects_stack_with_impact_and_scale_by_profile_and_resistance() {
+        // 프로필: 넉백0.6 스턴0.3 데미지0.5
+        let prof = EffectProfile {
+            knockback: 0.6,
+            stun: 0.3,
+            damage: 0.5,
+        };
+        let weak = resolve_effects(&prof, 0.2, 1.0); // 약한 접촉
+        let hard = resolve_effects(&prof, 2.0, 1.0); // 강한 태클
+                                                     // 약한 접촉: 데미지만(넉백/스턴 임계 미달)
+        assert!(weak.damage > 0.0 && weak.knockback == 0.0 && weak.stun == 0.0);
+        // 강한 태클: 셋 다 발동, 데미지도 더 큼
+        assert!(hard.damage > weak.damage && hard.knockback > 0.0 && hard.stun > 0.0);
+        // 저항↑ → 효과↓
+        let resisted = resolve_effects(&prof, 2.0, 4.0);
+        assert!(resisted.damage < hard.damage);
     }
 
     #[test]
