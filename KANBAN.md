@@ -22,8 +22,8 @@
 | **Plan 3a — 파츠/로드아웃/스탯** ✅완료 | 파츠 조립·스탯→물리·카탈로그·비대칭 프리셋 | [계획](docs/superpowers/plans/2026-07-08-parts-loadout.md) |
 | **Plan 3b — 전투/데미지** ✅완료 | 부위 콜라이더·충돌 이벤트·상호 데미지·부위HP·파손다운 | [계획](docs/superpowers/plans/2026-07-08-combat-damage.md) |
 | **Plan 3c — 효과 선택** ✅완료 | 넉백/스턴/데미지 effect 프로필·impact 비례 중첩 | [계획](docs/superpowers/plans/2026-07-08-combat-effects.md) |
-| **Plan 4a — 사람 조작 최소 슬라이스** ⭐다음 | 슬롯 참가+키보드 uplink+사람 조종+클라 상태렌더 | [계획](docs/superpowers/plans/2026-07-08-interactivity.md) |
-| Plan 4b — 전략 모드·AI 토글 | 마우스 전략·런타임 제어 전환 | (예정) |
+| **Plan 4a — 사람 조작 최소 슬라이스** ✅완료 | 슬롯 참가+키보드 uplink+사람 조종+클라 상태렌더 | [계획](docs/superpowers/plans/2026-07-08-interactivity.md) |
+| **Plan 4b — 전략 모드·AI 토글** ⭐다음 | 마우스 전략·런타임 제어 전환 | (예정) |
 | Plan 5 — 게임 흐름 | ATTRACT/SELECT/PLAYING/RESULT·슬롯 UI | (예정) |
 | Plan 6 — 랭킹 | 로봇별 승률 인메모리 | (예정) |
 | Plan 7 — NET SIM·재연결 | 지연/지터/드랍·heartbeat·슬롯 유예 | (예정) |
@@ -33,17 +33,6 @@
 
 ## Backlog
 
-**Plan 4a — 사람 조작 최소 슬라이스 (TDD 순서, [계획](docs/superpowers/plans/2026-07-08-interactivity.md))**
-- [ ] KB-36 HumanController(최근 입력 보유, 순수) (테스트: decide=보유입력)
-- [ ] KB-37 업링크 파싱 join/input/leave(순수) (테스트: 파싱·기형 무시) [의존: KB-36]
-- [ ] KB-38 WS recv → mpsc, 세션 생명주기 (수동: uplink 수신) [의존: KB-37]
-- [ ] KB-39 슬롯 Controller 스왑(사람↔AI)+입력 적용 (테스트: join→human, leave→AI) [의존: KB-38]
-- [ ] KB-40 클라 키보드 입력 + 참가 버튼 (빌드 통과) [의존: KB-37]
-- [ ] KB-41 클라 HP/스턴/다운 렌더 캐치업 (빌드 통과) [의존: KB-40]
-- [ ] KB-42 E2E(사람이 로봇 조종·전투 라이브) + 문서/KANBAN [의존: KB-39,41]
-
-> ⚠️ 착수 전 **드라이런 권장**: WS send+recv 동시(split/select)·핸들러↔sim태스크 mpsc 배선·세션→슬롯 매핑.
-
 **Plan 4b+** — 각 Plan 착수 시 writing-plans로 카드 추가.
 
 **남은 관찰/부채 (후속)**
@@ -51,6 +40,7 @@
 - (Plan 3a Minor) `apply_controls` 중복 가드·테스트명 정확성·aggregate slot 유니크 assert — 코스메틱
 - (Plan 3b Minor) 리플레이 전투 해시 테스트가 대칭AI라 데미지 없이 통과 가능(메커니즘은 강제충돌 테스트로 검증됨) / 다운 로봇도 접촉 데미지 가함(물리 장애물) / PART_NAMES↔part_count 결합 debug_assert — 전부 선택
 - (Plan 3c 튜닝/후속) impact=상대속도(post-step)·**부위별 취약도(KB-34 스킵)**·다중 부위쌍 동시 데미지·**효과 가중치 본격 밸런싱**(현재 초기값만: fore-std kb 0.6 / body-std stun 0.5 / body-light dmg 0.4)
+- (Plan 4a 후속) **`Controller::as_any_mut`(Any 다운캐스트) → Plan 4b에서 슬롯 상태 늘면 `SlotController` enum으로 리팩터** / mpsc 백프레셔 없음(하드닝 시) / **브라우저 시각검증 미완**(회전방향 ←=CCW·HP바·스턴/다운 렌더·상대와 충돌 시 라이브 전투 — 사용자가 `cargo run`+`npm run dev`로 확인)
 
 ## Todo
 _(비어 있음 — Plan 3b 착수 시 채움)_
@@ -59,6 +49,15 @@ _(비어 있음 — Plan 3b 착수 시 채움)_
 _(비어 있음)_
 
 ## Done
+**Plan 4a — 사람 조작 최소 슬라이스 ✅** (branch `feat/interactivity`)
+- [x] KB-36 HumanController(최근 입력 보유)
+- [x] KB-37 업링크 파싱(join/input/leave, serde_json::Value)
+- [x] KB-38 WS select! recv→mpsc + AtomicU64 세션id
+- [x] KB-39 슬롯 Controller 스왑(사람↔AI)+입력 적용(+멱등 join)
+- [x] KB-40 클라 키보드 입력 + 참가 버튼
+- [x] KB-41 클라 HP/스턴/다운 렌더
+- [x] KB-42 검증: cargo test 41/41, debug+release warning 0, 클라 빌드, WS 사람입력 스모크(blue 이동·st 존재). 브라우저 시각검증은 사용자 몫
+
 **Plan 3c — 효과 선택 ✅** (branch `feat/combat-damage`)
 - [x] KB-30 effect 프로필 + 임팩트 비례 중첩 선택(순수)
 - [x] KB-31 스턴 타이머(순수)
