@@ -17,8 +17,13 @@ export type GameState = { robots: Robot[]; ball: Ball; score: [number, number]; 
 let socket: WebSocket | null = null;
 
 export function connect(onState: (s: GameState) => void): void {
-  const ws = new WebSocket("ws://localhost:8090/ws");
+  // 127.0.0.1 고정: 이 머신에서 `localhost`는 IPv6(::1)로 다른 서비스에 갈 수 있어
+  // IPv4 0.0.0.0 바인드 서버에 안 닿음. (LAN/폰은 추후 PUBLIC_URL 설정으로)
+  const ws = new WebSocket("ws://127.0.0.1:8090/ws");
   socket = ws;
+  ws.onopen = () => console.log("[ws] connected");
+  ws.onerror = (e) => console.error("[ws] error", e);
+  ws.onclose = (e) => console.warn("[ws] closed", e.code, e.reason);
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
     if (msg.t === "state") onState(msg.state as GameState);
