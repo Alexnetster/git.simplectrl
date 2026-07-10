@@ -15,11 +15,35 @@ export function render(ctx: CanvasRenderingContext2D, s: GameState): void {
   ctx.fillRect(width-4, ty(GOAL_W/2), 4, GOAL_W*sy);
   // 로봇
   for (const r of s.robots) {
-    ctx.fillStyle = r.id === "Blue" ? "#39f" : "#f55";
+    const downed = r.st?.includes("downed") ?? false;
+    const stunned = r.st?.includes("stun") ?? false;
+
     ctx.save(); ctx.translate(tx(r.pos.x), ty(r.pos.y)); ctx.rotate(-r.rot);
+    ctx.globalAlpha = downed ? 0.4 : 1.0; // 파손 다운 시 흐리게
+    ctx.fillStyle = r.id === "Blue" ? "#39f" : "#f55";
     ctx.fillRect(-15, -12, 30, 24);
     ctx.fillStyle = "#fff"; ctx.fillRect(10, -3, 8, 6); // 앞방향 표시
     ctx.restore();
+    ctx.globalAlpha = 1.0;
+
+    // HP바: 부위 중 최소 HP비율(가장 위험한 부위 기준)
+    if (r.parts && r.parts.length > 0) {
+      const minHp = Math.min(...r.parts.map(([, hp]) => hp));
+      const barW = 30, barH = 4;
+      const bx = tx(r.pos.x) - barW / 2, by = ty(r.pos.y) - 22;
+      ctx.fillStyle = "#222"; ctx.fillRect(bx, by, barW, barH);
+      ctx.fillStyle = minHp > 0.5 ? "#3f3" : minHp > 0.2 ? "#fa3" : "#f33";
+      ctx.fillRect(bx, by, barW * Math.max(0, minHp), barH);
+    }
+
+    // 스턴/다운 상태 표시
+    if (downed || stunned) {
+      ctx.fillStyle = "#ff0";
+      ctx.font = "11px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(downed ? "DOWN" : "STUN", tx(r.pos.x), ty(r.pos.y) - 26);
+      ctx.textAlign = "left";
+    }
   }
   // 공
   ctx.fillStyle = "#fff"; ctx.beginPath();

@@ -1,5 +1,16 @@
 export type Vec2 = { x: number; y: number };
-export type Robot = { id: "Blue" | "Red"; pos: Vec2; rot: number };
+/** 파손 다운 상태(스냅샷 디버프). repair_in = 리페어까지 남은 초. */
+export type Down = { broken: boolean; repair_in: number };
+export type Robot = {
+  id: "Blue" | "Red";
+  pos: Vec2;
+  rot: number;
+  /** 부위별 (부위명, HP비율 0..1). 3b부터 서버가 방출. */
+  parts?: [string, number][];
+  down?: Down;
+  /** 상태이상 태그: "downed" | "stun" 등. */
+  st?: string[];
+};
 export type Ball = { pos: Vec2 };
 export type GameState = { robots: Robot[]; ball: Ball; score: [number, number]; time: number };
 
