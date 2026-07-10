@@ -9,6 +9,7 @@ mod parts;
 mod physics;
 #[cfg(test)]
 mod replay;
+mod session;
 
 use accumulator::Accumulator;
 use control::{ChaseBallAi, Controller};
