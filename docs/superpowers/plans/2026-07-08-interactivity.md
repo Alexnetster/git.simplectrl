@@ -8,7 +8,29 @@
 
 **Tech Stack:** tokio mpsc(신규 외부 API 없음), axum ws recv, 기존 스택. 클라 canvas 렌더 확장. 설계: [02 §3.2 업링크](../../02-네트워크-프로토콜.md), [00 §9 Controller](../../00-개요-및-게임설계.md), [01 §3 입력 매핑](../../01-UX-화면구성.md).
 
-> **착수 전 드라이런 권장:** 새 rapier API는 없지만 **비동기 배선**(WS핸들러↔sim태스크 mpsc, 세션→슬롯 매핑, 소유권/동시성)이 리스크. 컴파일 프로브로 채널 패턴·axum ws `recv` 시그니처 확정.
+> **드라이런 완료(axum 0.7+tokio 프로브 검증)** — 아래 필수 반영 참조.
+
+## ⚠️ 착수 전 필수 반영 (드라이런 점검 — 이 목록이 태스크 코드보다 우선)
+
+프로브로 비동기 배선 컴파일 확인, 신규 rapier API 없음. 반영 사항:
+
+1. **[핵심] WS send+recv = `tokio::select!` (신규 dep 0).** Task 3 Step 2의 단독 `recv` 루프는 **동시 송신 불가** → 한 태스크 안에서:
+   ```rust
+   loop { tokio::select! {
+     _ = tick.tick() => { if socket.send(Message::Text(state.watch_rx.borrow().clone())).await.is_err() { break; } }
+     msg = socket.recv() => match msg {
+       Some(Ok(Message::Text(s))) => { let _ = state.uplink_tx.send((sid, s)); }
+       Some(Ok(_)) => {}, Some(Err(_)) | None => break,
+     }
+   }}
+   ```
+   (split()는 `futures-util` 필요 + 오늘 crates.io 핀 이슈(`0.3.31` 강제) → **비권장**.)
+2. **net.rs 시그니처**: `serve(rx)` → **`serve(watch_rx, uplink_tx)`** (또는 `AppState{watch_rx, uplink_tx}` State). `mpsc::UnboundedSender`는 Clone+Send+Sync → Arc 불필요.
+3. **mpsc 배선**: main에서 `mpsc::unbounded_channel::<(SessionId,Uplink)>()`; tx→State, rx→sim 태스크 `move`. sim 루프는 매 프레임 **논블로킹 드레인** `while let Ok((sid,u)) = rx.try_recv() { slots.apply(u, sid); }`. 컨트롤러는 sim 태스크 배타 소유 → **Mutex 불필요**.
+4. **세션ID**: `AtomicU64` 카운터를 `ws_handler` 진입 시 증가시켜 발급.
+5. **슬롯 경합**(Task 4): 이미 다른 세션이 점유한 슬롯 join은 **거부/무시** — 테스트 `join_rejected_when_slot_already_taken` 추가.
+6. **loadout 이연**: 이번 슬라이스 `join`은 `slot`만. `loadout`은 4b. 프리셋(striker/guard)은 **기존 하드코딩 유지**([02 §4.3]의 축소).
+7. **결정성 근거**: 다운/스턴 입력무시는 이미 physics에 구현 → `HumanController`는 최근 입력만 반환. mpsc 주입은 I/O 경계, 코어(step/tick) 순수 유지.
 
 ---
 
