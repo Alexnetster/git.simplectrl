@@ -33,7 +33,7 @@ mod tests {
     fn tick_drives_physics_and_ball_moves_when_robot_pushes() {
         let mut w = PhysicsWorld::new_kickoff();
         let mut ctrls: Vec<Box<dyn Controller>> =
-            vec![Box::new(ChaseBallAi), Box::new(ChaseBallAi)];
+            vec![Box::new(ChaseBallAi::default()), Box::new(ChaseBallAi::default())];
         // 두 AI가 좌우 대칭이라 공을 중앙에서 맞미는 평형으로 수렴한다.
         // "밀면 움직인다"는 의도상, 스냅샷 최종값이 아니라 구동 중 임의 시점에
         // 공이 실제로 움직였는지(변위/속도)를 판정한다. (결정적)

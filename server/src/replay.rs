@@ -31,7 +31,7 @@ pub fn hash_state(s: &GameState) -> u64 {
 /// 로봇별 스탯을 받아 2 ChaseBallAi로 N 스텝 돌린 뒤 최종 스냅샷 해시. 결정적.
 pub fn run_headless_with(stats: [StatSet; 2], steps: u32) -> u64 {
     let mut w = PhysicsWorld::new_kickoff_with(stats, [String::new(), String::new()]);
-    let mut c: Vec<Box<dyn Controller>> = vec![Box::new(ChaseBallAi), Box::new(ChaseBallAi)];
+    let mut c: Vec<Box<dyn Controller>> = vec![Box::new(ChaseBallAi::default()), Box::new(ChaseBallAi::default())];
     for _ in 0..steps {
         crate::loop_runner::tick(&mut w, &mut c);
     }

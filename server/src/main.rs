@@ -32,7 +32,7 @@ struct SlotControllers {
 impl SlotControllers {
     fn new_ai() -> Self {
         Self {
-            ctrls: vec![Box::new(ChaseBallAi), Box::new(ChaseBallAi)],
+            ctrls: vec![Box::new(ChaseBallAi::default()), Box::new(ChaseBallAi::default())],
             owner: vec![None, None],
         }
     }
@@ -69,7 +69,7 @@ impl SlotControllers {
                 // (한 세션 = 최대 한 슬롯).
                 if let Some(prev) = self.owner_slot(sid) {
                     if prev != i {
-                        self.ctrls[prev] = Box::new(ChaseBallAi);
+                        self.ctrls[prev] = Box::new(ChaseBallAi::default());
                         self.owner[prev] = None;
                     }
                 }
@@ -78,7 +78,7 @@ impl SlotControllers {
             }
             Uplink::Leave => {
                 if let Some(i) = self.owner_slot(sid) {
-                    self.ctrls[i] = Box::new(ChaseBallAi);
+                    self.ctrls[i] = Box::new(ChaseBallAi::default());
                     self.owner[i] = None;
                 }
             }
