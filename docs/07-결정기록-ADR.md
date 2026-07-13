@@ -87,3 +87,22 @@
   - **부위별 취약도 항은 미구현**(3b/3c는 로봇 총 attack/defense) — 후속 튜닝.
   - **데미지 = `damage_on_contact`(공/방) + 가산 `effect.damage`(dmg_w)**. 효과 가중치는 카탈로그에 초기값만(밸런싱 부채).
   - 충돌 이벤트는 `(rA,rB,pA,pB)` 정렬 후 적용(멀티히트 결정성). 벽/공 오독은 **로봇 부위 멤버십 셋**으로 차단.
+
+## ADR-010 — 필드 지오메트리(골 입구 펜스 + 코너 챔퍼)
+- **상태**: 확정 (KB-43/44, 플레이테스트 반영)
+- **맥락**: AI-대-AI/사람 플레이 중 (1) 로봇이 골 입구 틈으로 필드 밖 이탈, (2) 사각 코너에 공이 끼어 빠지지 않음.
+- **결정**:
+  - 골 입구에 **GOALFENCE 충돌그룹** 펜스 — rapier `InteractionGroups`로 로봇(ROBOT 그룹)은 막고 공(BALL 그룹)은 통과(득점 유지). 그룹: `BALL`/`ROBOT`/`SOLID`/`GOALFENCE`.
+  - 4개 코너에 **45° 챔퍼**(빗변 cuboid, SOLID 그룹)로 공 끼임 완화.
+- **근거**: 서버 권위 물리([ADR-002])에서 필드 경계는 물리로 강제. 충돌그룹 필터가 "로봇만 가두고 공은 통과"를 선언적으로 표현.
+- **영향**: `server/src/physics.rs`의 `groups` 모듈 + `new_kickoff_with`(벽/펜스/챔퍼 생성). 골 판정은 공만 통과하므로 불변.
+
+## ADR-011 — 스태미나/스프린트 최소 슬라이스
+- **상태**: 확정 (KB-45). 수치는 튜닝.
+- **맥락**: "체력(배터리)" 요청 — 고속 이동은 소모, 저속은 상시. [09-AI-설계](09-AI-설계.md) §8은 스코프를 "걷기/달리기"만으로 한정.
+- **결정**:
+  - **걷기(`max_speed`)는 상시** 가능. **스프린트(`sprint_speed`, Shift 홀드=`input.run`)는 `stamina>0`에서만**, `apply_controls`에서 게이팅하고 `stamina==0`이면 클라가 `run:true`를 계속 보내도 걷기 속도로 자동 폴백.
+  - 스프린트 중 소모 / 아닐 때 재생. `StaminaState`는 **순수 `f32`**(결정성).
+  - **제외(YAGNI)**: 오버히트 감속 페널티·AI 스프린트·복잡한 재생 구분.
+- **근거**: 결정적·순수 유지([ADR-007])로 리플레이 보존. 최소 슬라이스로 "실시간 제어에 자원 관리 한 축"을 시연, 나머지는 부채로 미룸.
+- **영향**: `parts.rs`의 `StatSet` +`sprint_speed`/`stamina_max`/`stamina_regen`; 신규 `stamina.rs`; `physics.rs`(게이팅/스냅샷); `world.rs`의 `ControlOutput.run`·`RobotState.stamina`; `session.rs`(run 파싱); [02-네트워크-프로토콜](02-네트워크-프로토콜.md)은 이미 `input.run`+스냅샷 `stamina:0~1` 서술이 있어 정합(무변경). 클라 스태미나바(`render.ts`).
