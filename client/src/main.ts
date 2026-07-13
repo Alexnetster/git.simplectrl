@@ -3,6 +3,7 @@ import { render } from "./render";
 import { initInput, initJoinButtons } from "./input";
 import { initDevPanel } from "./devpanel";
 import { advanceRenderClock, getRenderState } from "./interp";
+import { updateHud } from "./hud";
 
 const ctx = (document.getElementById("c") as HTMLCanvasElement).getContext("2d")!;
 // 원본 스냅샷은 net.ts 내부 버퍼에 쌓이고 렌더는 interp.ts를 통해 읽는다
@@ -18,7 +19,10 @@ function frame(now: number) {
   lastFrameT = now;
   advanceRenderClock(dt);
   const s = getRenderState();
-  if (s) render(ctx, s);
+  if (s) {
+    render(ctx, s);
+    updateHud(s);
+  }
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

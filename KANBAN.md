@@ -47,9 +47,12 @@
 _(비어 있음 — Plan 3b 착수 시 채움)_
 
 ## In Progress
-- [ ] KB-51 UI 비주얼 디자인 — 미드나잇 프리시전 콘솔(크롬) + Neon Telemetry Arena(게임화면). 방향·시안 확정([ADR-014](docs/07-결정기록-ADR.md), 독립 리뷰어 2패널), 실제 클라 적용 중(index.html/render.ts/HUD 배선; 기능 불변)
+_(비어 있음)_
 
 ## Done
+**UI 비주얼 디자인 ✅** (branch `feat/interactivity`)
+- [x] KB-51 미드나잇 프리시전 콘솔(크롬) + Neon Telemetry Arena(게임화면) — 독립 리뷰어 2패널로 방향 결정([ADR-014](docs/07-결정기록-ADR.md)), 시안 승인 후 클라 적용(index.html 콘솔 레이아웃·style.css·render.ts 아트·hud.ts/devpanel.ts HUD 배선). netsim/RTT를 일급 LINK MONITOR로 격상, 스코어/시계 크롬 HUD 이전. 기능 불변(보간·ping/RTT·netsim·참가·입력), 클라 빌드 clean, 배선 id 12개 정합 확인.
+
 **Plan 7a — 넷코드 견고성 시연 ✅** (branch `feat/interactivity`)
 - [x] KB-50 보간 + 서버 아웃바운드 링크심(지연/지터/드랍) + ping/RTT + 개발패널 (테스트: 서버 81/81, debug+release warning 0, 클라 빌드 clean, sim/리플레이 불변) *(인바운드·재연결·예측 제외 = YAGNI)*
 
