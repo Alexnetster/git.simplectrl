@@ -16,9 +16,10 @@ const HEX: Leg[] = [
   { x: -7, y: 7, ph: 0 }, { x: -7, y: -7, ph: Math.PI },
 ];
 
-// 평가용 임시 배정: Blue=4족, Red=6족(나란히 비교용). 추후 로드아웃(r.robot 프리셋)에 연결.
-function chassisFor(r: Robot): Chassis {
-  return r.id === "Red" ? "hex" : "quad";
+// 섀시 = 6족(거미형)으로 확정(KB-47 후속). 4족 렌더 코드(QUAD)는 향후
+// 로드아웃/섀시 파츠로 개별화할 때를 위해 남겨둔다.
+function chassisFor(_r: Robot): Chassis {
+  return "hex";
 }
 
 // 보행 위상 상태(로봇별). rAF 프레임마다 실시간 dt × 평활 속도로 위상 전진 →
