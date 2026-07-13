@@ -152,6 +152,11 @@ pub struct DefenderAi {
 /// 수비형이 자기 골에서 벗어나는 최대 거리(m). 공이 이보다 가까우면 공 쪽으로
 /// 나가 막고, 멀면 이 거리에서 골 앞을 지킨다(튜닝 대상).
 const DEFENDER_GUARD_DIST: f32 = 2.5;
+/// 도착 판정 반경(m, KB-59). 목표에 이 안으로 들어오면 전진을 멈추고 공을 조준하며
+/// 대기 — 도착 지점에서 목표방향이 ≈0이 돼 각도가 노이즈가 되는 제자리 스핀을 방지.
+const DEFENDER_ARRIVE: f32 = 0.45;
+/// 회전 데드존(rad). 이보다 작은 조준 오차엔 회전하지 않음(미세 떨림/스핀 억제).
+const TURN_DEADZONE: f32 = 0.1;
 
 impl DefenderAi {
     /// 자기 골과 공을 잇는 선 위, 자기 골에서 `DEFENDER_GUARD_DIST` 이내 지점을
@@ -195,12 +200,21 @@ impl Controller for DefenderAi {
             return escape_output(view.me.pos.y);
         }
 
-        // 평소: 자기 골 지킴 목표 지점을 향해 이동(공 자체를 쫓지 않음 → 공격형과
-        // 뭉치지 않는다).
-        let (tx, ty) = Self::guard_target(view.me.id, view.ball);
-        let dx = tx - view.me.pos.x;
-        let dy = ty - view.me.pos.y;
-        let target = dy.atan2(dx);
+        // 평소: 골 지킴 목표로 이동하되, **목표에 도착하면 제자리서 돌지 말고 공을
+        // 바라보며 대기**(골키퍼처럼). 도착 시 목표방향(dx,dy)이 ≈0이 돼 각도가 노이즈가
+        // 되고, 높은 회전율 탓에 좌우로 뱅뱅 도는 문제를 방지한다(KB-59).
+        let (gtx, gty) = Self::guard_target(view.me.id, view.ball);
+        let tdx = gtx - view.me.pos.x;
+        let tdy = gty - view.me.pos.y;
+        let to_target = (tdx * tdx + tdy * tdy).sqrt();
+        // 도착했으면 전진 멈추고 공 조준(대기), 아니면 목표로 전진.
+        let (aimx, aimy, thrust) = if to_target > DEFENDER_ARRIVE {
+            (tdx, tdy, 1.0)
+        } else {
+            (view.ball.pos.x - view.me.pos.x, view.ball.pos.y - view.me.pos.y, 0.0)
+        };
+        let aim_dist = (aimx * aimx + aimy * aimy).sqrt();
+        let target = aimy.atan2(aimx);
         let mut diff = target - view.me.rot;
         while diff > std::f32::consts::PI {
             diff -= std::f32::consts::TAU;
@@ -208,9 +222,15 @@ impl Controller for DefenderAi {
         while diff < -std::f32::consts::PI {
             diff += std::f32::consts::TAU;
         }
+        // 회전 데드존 + 조준대상이 사실상 제자리(공이 몸 위)면 회전 안 함(스핀 억제).
+        let turn = if aim_dist < 1e-3 || diff.abs() < TURN_DEADZONE {
+            0.0
+        } else {
+            diff.clamp(-1.0, 1.0)
+        };
         ControlOutput {
-            thrust: 1.0,
-            turn: diff.clamp(-1.0, 1.0),
+            thrust,
+            turn,
             run: false,
             // 클리어 슛: 정면 사거리 + 상대 골 정렬 시에만(공격형과 동일 조건 공유).
             kick: wants_kick(view),
@@ -386,6 +406,21 @@ mod tests {
         let mut defender = DefenderAi::default();
         let out = defender.decide(&GameView { me: &me, ball: &ball });
         assert!(out.thrust > 0.0, "공이 가까우면 나가서 막아야 함");
+    }
+
+    /// 목표에 도착하면 제자리서 돌지 않고(회전 데드존) 전진을 멈추고 공을 바라본다(KB-59).
+    /// 블루 수비형을 guard_target(=(-3.5,0))에 공(+x) 쪽으로 배치 → thrust 0, turn≈0.
+    #[test]
+    fn defender_holds_without_spinning_when_arrived() {
+        let (me, ball) = view_at(Team::Blue, Vec2 { x: -3.5, y: 0.0 }, 0.0, Vec2 { x: 5.0, y: 0.0 });
+        let mut d = DefenderAi::default();
+        let out = d.decide(&GameView { me: &me, ball: &ball });
+        assert_eq!(out.thrust, 0.0, "도착하면 전진을 멈춰야 함");
+        assert!(
+            out.turn.abs() < 1e-3,
+            "이미 공을 향하면 회전하지 않아야 함(제자리 스핀 방지) (turn={})",
+            out.turn
+        );
     }
 
     /// 수비형도 정면 사거리+상대 골 정렬이면 클리어 슛(공격형과 동일 조건 공유).
