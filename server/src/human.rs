@@ -41,6 +41,7 @@ mod tests {
             parts: Vec::new(),
             down: Down::default(),
             st: Vec::new(),
+            stamina: 1.0,
         };
         let ball = BallState {
             pos: Vec2 { x: 0.0, y: 0.0 },
@@ -55,6 +56,7 @@ mod tests {
         hc.set(ControlOutput {
             thrust: 1.0,
             turn: -1.0,
+            run: false,
         });
         let (robot, ball) = dummy_view();
         let out = hc.decide(&GameView {

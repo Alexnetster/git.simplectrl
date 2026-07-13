@@ -18,6 +18,10 @@ pub struct StatSet {
     pub kb_w: f32,   // 넉백 성향
     pub stun_w: f32, // 스턴 성향
     pub dmg_w: f32,  // 데미지 성향
+    // 스태미나/달리기(KB-45, 문서 §8 최소 슬라이스: 걷기/달리기만, 오버히트 제외).
+    pub sprint_speed: f32,   // 달리기 시 속도 상한(walk의 max_speed 대체)
+    pub stamina_max: f32,    // 스태미나 용량(초 단위 소모량과 동일 축)
+    pub stamina_regen: f32,  // 초당 회복량(달리지 않을 때)
 }
 
 impl StatSet {
@@ -33,6 +37,9 @@ impl StatSet {
         self.kb_w += o.kb_w;
         self.stun_w += o.stun_w;
         self.dmg_w += o.dmg_w;
+        self.sprint_speed += o.sprint_speed;
+        self.stamina_max += o.stamina_max;
+        self.stamina_regen += o.stamina_regen;
     }
 }
 
@@ -46,6 +53,10 @@ pub fn default_stats() -> StatSet {
         accel: 6.0,
         turn_rate: 3.0,
         mass: 0.0,
+        // sprint_speed ≈ 1.6× max_speed, stamina_max = 3초분, 4초에 완전 회복.
+        sprint_speed: 16.0,
+        stamina_max: 3.0,
+        stamina_regen: 0.75,
         ..Default::default()
     }
 }
@@ -112,6 +123,9 @@ pub fn catalog() -> Catalog {
             defense: 6.0,
             // 무거운 몸통 → 스턴 성향(Plan 3c 초기값, 밸런싱 대상).
             stun_w: 0.5,
+            // 스태미나 용량/회복(몸통이 주 기여, KB-45). 3초분, ~4초에 완전 회복.
+            stamina_max: 3.0,
+            stamina_regen: 0.75,
             ..Default::default()
         },
     );
@@ -124,21 +138,26 @@ pub fn catalog() -> Catalog {
             defense: 4.0,
             // 가볍고 예리한 몸통 → 데미지 성향(Plan 3c 초기값, 밸런싱 대상).
             dmg_w: 0.4,
+            // 가벼운 몸통은 스태미나 용량은 약간 적지만 회복은 더 빠름.
+            stamina_max: 2.5,
+            stamina_regen: 0.85,
             ..Default::default()
         },
     );
-    // 스피드형 뒷다리(빠르지만 가속 낮음) — 좌/우
+    // 스피드형 뒷다리(빠르지만 가속 낮음) — 좌/우. sprint_speed ≈ 1.6× max_speed.
     let hind_speed = StatSet {
         max_speed: 5.5,
         accel: 2.0,
+        sprint_speed: 8.8,
         ..Default::default()
     };
     add("hind-speed-l", Slot::HindlegL, hind_speed);
     add("hind-speed-r", Slot::HindlegR, hind_speed);
-    // 파워형 뒷다리(가속 높지만 최고속 낮음) — 좌/우
+    // 파워형 뒷다리(가속 높지만 최고속 낮음) — 좌/우. sprint_speed ≈ 1.6× max_speed.
     let hind_power = StatSet {
         max_speed: 4.0,
         accel: 3.5,
+        sprint_speed: 6.4,
         ..Default::default()
     };
     add("hind-power-l", Slot::HindlegL, hind_power);

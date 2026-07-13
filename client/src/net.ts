@@ -10,6 +10,8 @@ export type Robot = {
   down?: Down;
   /** 상태이상 태그: "downed" | "stun" 등. */
   st?: string[];
+  /** 스태미나 비율 0..1(KB-45). */
+  stamina?: number;
 };
 export type Ball = { pos: Vec2 };
 export type GameState = { robots: Robot[]; ball: Ball; score: [number, number]; time: number };

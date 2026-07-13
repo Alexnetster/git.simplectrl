@@ -10,6 +10,7 @@ mod physics;
 #[cfg(test)]
 mod replay;
 mod session;
+mod stamina;
 
 use accumulator::Accumulator;
 use control::{ChaseBallAi, Controller};
@@ -181,6 +182,7 @@ mod tests {
             Uplink::Input(ControlOutput {
                 thrust: 1.0,
                 turn: 0.5,
+                run: false,
             }),
             1,
         );
@@ -198,6 +200,7 @@ mod tests {
             parts: Vec::new(),
             down: world::Down::default(),
             st: Vec::new(),
+            stamina: 1.0,
         };
         let ball = world::BallState {
             pos: world::Vec2 { x: 0.0, y: 0.0 },
@@ -215,6 +218,7 @@ mod tests {
             Uplink::Input(ControlOutput {
                 thrust: -1.0,
                 turn: -1.0,
+                run: false,
             }),
             2,
         );
@@ -237,6 +241,7 @@ mod tests {
             Uplink::Input(ControlOutput {
                 thrust: 1.0,
                 turn: 0.0,
+                run: false,
             }),
             1,
         );
@@ -251,6 +256,7 @@ mod tests {
             parts: Vec::new(),
             down: world::Down::default(),
             st: Vec::new(),
+            stamina: 1.0,
         };
         let ball = world::BallState {
             pos: world::Vec2 { x: 0.0, y: 0.0 },

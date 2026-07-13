@@ -1,5 +1,6 @@
 use crate::combat::CombatState;
 use crate::parts::StatSet;
+use crate::stamina::StaminaState;
 use crate::world::*;
 use rapier2d::prelude::*;
 use std::collections::HashMap;
@@ -81,6 +82,8 @@ pub struct PhysicsWorld {
     part_map: HashMap<ColliderHandle, (usize, usize)>,
     /// 로봇별 부위 HP·파손 다운 상태(결정적 순수 로직 combat.rs).
     combat: Vec<CombatState>,
+    /// 로봇별 스태미나 상태(결정적 순수 로직 stamina.rs, KB-45).
+    stamina: Vec<StaminaState>,
     pub score: (u32, u32),
     pub time: f32,
 }
@@ -184,6 +187,7 @@ impl PhysicsWorld {
         let mut robots = Vec::new();
         let mut part_map: HashMap<ColliderHandle, (usize, usize)> = HashMap::new();
         let mut combat = Vec::new();
+        let mut stamina = Vec::new();
         for (i, &(x, rot)) in KICKOFF.iter().enumerate() {
             let rb = bodies.insert(
                 RigidBodyBuilder::dynamic()
@@ -216,6 +220,7 @@ impl PhysicsWorld {
                 part_map.insert(ch, (i, p));
             }
             combat.push(CombatState::new(&part_hps(stats[i].hp)));
+            stamina.push(StaminaState::new(stats[i].stamina_max, stats[i].stamina_regen));
             robots.push(rb);
         }
 
@@ -255,6 +260,7 @@ impl PhysicsWorld {
             preset_ids: preset_ids.to_vec(),
             part_map,
             combat,
+            stamina,
             score: (0, 0),
             time: 0.0,
         }
@@ -274,16 +280,25 @@ impl PhysicsWorld {
                 continue;
             }
             let st = &self.stats[i];
+            // 달리기(KB-45): run 요청 + 스태미나 잔량이 있을 때만 sprint_speed 적용,
+            // 소모. 스태미나 0이면 자동으로 walk(max_speed)로 폴백. 걷는 동안은 회복.
+            let sprinting = c.run && self.stamina[i].has_stamina();
+            if sprinting {
+                self.stamina[i].drain(DT);
+            } else {
+                self.stamina[i].regen(DT);
+            }
+            let speed_cap = if sprinting { st.sprint_speed } else { st.max_speed };
             let rb = &mut self.bodies[*h];
             rb.set_angvel(c.turn * st.turn_rate, true);
             let angle = rb.rotation().angle();
             let dir = vector![angle.cos(), angle.sin()];
             rb.apply_impulse(dir * (c.thrust * st.accel * DT), true);
-            // maxSpeed 클램프 (impulse 적용 후)
+            // maxSpeed(또는 sprint_speed) 클램프 (impulse 적용 후)
             let v = *rb.linvel();
             let sp = (v.x * v.x + v.y * v.y).sqrt();
-            if sp > st.max_speed && sp > 0.0 {
-                let k = st.max_speed / sp;
+            if sp > speed_cap && sp > 0.0 {
+                let k = speed_cap / sp;
                 rb.set_linvel(vector![v.x * k, v.y * k], true);
             }
         }
@@ -506,6 +521,7 @@ impl PhysicsWorld {
                         repair_in: cs.repair_in(),
                     },
                     st,
+                    stamina: self.stamina[i].ratio(),
                 }
             })
             .collect();
@@ -580,7 +596,7 @@ mod tests {
         // 서로를 향해 돌진(robot0 +x, robot1 -x)
         let toward = [ControlOutput {
             thrust: 1.0,
-            turn: 0.0,
+            turn: 0.0, run: false,
         }; 2];
         for _ in 0..120 {
             w.step(&toward);
@@ -620,7 +636,7 @@ mod tests {
         w.set_robot_for_test(1, vector![0.4, 0.0], std::f32::consts::PI);
         let toward = [ControlOutput {
             thrust: 1.0,
-            turn: 0.0,
+            turn: 0.0, run: false,
         }; 2];
         let mut stunned_seen = false;
         let mut max_speed_seen: f32 = 0.0;
@@ -665,7 +681,7 @@ mod tests {
         let before = (w.hp_ratio_min(0), w.hp_ratio_min(1));
         let toward = [ControlOutput {
             thrust: 1.0,
-            turn: 0.0,
+            turn: 0.0, run: false,
         }; 2];
         for _ in 0..120 {
             w.step(&toward);
@@ -694,7 +710,7 @@ mod tests {
         w.set_robot_for_test(1, vector![0.4, 0.0], std::f32::consts::PI);
         let toward = [ControlOutput {
             thrust: 1.0,
-            turn: 0.0,
+            turn: 0.0, run: false,
         }; 2];
         let mut stunned_seen = false;
         let mut max_speed_seen: f32 = 0.0;
@@ -731,7 +747,7 @@ mod tests {
             w.step(&[
                 ControlOutput {
                     thrust: 1.0,
-                    turn: 0.0,
+                    turn: 0.0, run: false,
                 },
                 ControlOutput::default(),
             ]);
@@ -756,7 +772,7 @@ mod tests {
             w.step(&[
                 ControlOutput {
                     thrust: 1.0,
-                    turn: 0.0,
+                    turn: 0.0, run: false,
                 },
                 ControlOutput::default(),
             ]);
@@ -785,7 +801,7 @@ mod tests {
             w.step(&[
                 ControlOutput {
                     thrust: 1.0,
-                    turn: 0.0,
+                    turn: 0.0, run: false,
                 },
                 ControlOutput::default(),
             ]);
@@ -893,7 +909,7 @@ mod tests {
             PhysicsWorld::new_kickoff_with([slow, slow], [String::new(), String::new()]);
         let fwd = [ControlOutput {
             thrust: 1.0,
-            turn: 0.0,
+            turn: 0.0, run: false,
         }; 2];
         for _ in 0..120 {
             w.step(&fwd);
@@ -901,6 +917,59 @@ mod tests {
         let v = w.snapshot().robots[0].vel;
         let sp = (v.x * v.x + v.y * v.y).sqrt();
         assert!(sp <= 1.05, "속도는 max_speed 근처로 제한되어야 함 (got {sp})");
+    }
+
+    #[test]
+    fn sprint_exceeds_walk_speed_then_falls_back_when_stamina_depleted() {
+        use crate::parts::StatSet;
+        // stamina_regen=0 → 소진 후 회복 없이 결정적으로 walk 유지(오실레이션 배제).
+        let runner = StatSet {
+            max_speed: 5.0,
+            accel: 50.0,
+            turn_rate: 1.0,
+            mass: 1.0,
+            sprint_speed: 10.0,
+            stamina_max: 0.5, // 0.5초분 = DT(1/60) 기준 30틱
+            stamina_regen: 0.0,
+            ..Default::default()
+        };
+        let mut w =
+            PhysicsWorld::new_kickoff_with([runner, runner], [String::new(), String::new()]);
+        let run_input = [ControlOutput {
+            thrust: 1.0,
+            turn: 0.0,
+            run: true,
+        }; 2];
+        let mut max_speed_seen: f32 = 0.0;
+        for _ in 0..20 {
+            // 스태미나 소진(30틱) 전 구간
+            w.step(&run_input);
+            let v = w.snapshot().robots[0].vel;
+            max_speed_seen = max_speed_seen.max((v.x * v.x + v.y * v.y).sqrt());
+        }
+        assert!(
+            max_speed_seen > 5.5,
+            "스태미나가 있으면 sprint_speed까지 max_speed를 초과해야 함 (got {max_speed_seen})"
+        );
+        assert!(
+            w.snapshot().robots[0].stamina < 1.0,
+            "달리는 동안 스태미나가 소모되어야 함"
+        );
+        // 스태미나 소진(총 200틱 진행, 30틱 넘음) 후 계속 run:true를 눌러도 walk로 폴백.
+        for _ in 0..200 {
+            w.step(&run_input);
+        }
+        assert_eq!(
+            w.snapshot().robots[0].stamina,
+            0.0,
+            "스태미나가 0으로 소진되어야 함(회복 없음 설정)"
+        );
+        let v = w.snapshot().robots[0].vel;
+        let sp = (v.x * v.x + v.y * v.y).sqrt();
+        assert!(
+            sp <= 5.5,
+            "스태미나 소진 후 run:true를 유지해도 walk(max_speed)로 자동 폴백해야 함 (got {sp})"
+        );
     }
 
     #[test]
@@ -915,11 +984,11 @@ mod tests {
         let fwd = [
             ControlOutput {
                 thrust: 1.0,
-                turn: 0.0,
+                turn: 0.0, run: false,
             },
             ControlOutput {
                 thrust: 1.0,
-                turn: 0.0,
+                turn: 0.0, run: false,
             },
         ];
         let x0 = w
@@ -947,7 +1016,7 @@ mod tests {
         let toward = [
             ControlOutput {
                 thrust: 1.0,
-                turn: 0.0,
+                turn: 0.0, run: false,
             },
             ControlOutput::default(),
         ];

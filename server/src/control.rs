@@ -30,6 +30,8 @@ impl Controller for ChaseBallAi {
         ControlOutput {
             thrust: 1.0,
             turn: diff.clamp(-1.0, 1.0),
+            // AI는 달리기를 쓰지 않는다(KB-45 YAGNI: AI sprint 없음).
+            run: false,
         }
     }
 }
@@ -49,6 +51,7 @@ mod tests {
             parts: Vec::new(),
             down: Down::default(),
             st: Vec::new(),
+            stamina: 1.0,
         };
         let ball = BallState {
             pos: Vec2 { x: 5.0, y: 0.0 },

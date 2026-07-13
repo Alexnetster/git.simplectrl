@@ -37,6 +37,8 @@ pub struct RobotState {
     pub down: Down,
     /// 상태이상 태그(3b: 파손 다운 시 `["downed"]`, 그 외 빈 벡터).
     pub st: Vec<String>,
+    /// 스태미나 비율 0..1(KB-45). 용량 없는 로봇은 항상 1.0.
+    pub stamina: f32,
 }
 
 #[derive(Clone, Copy, Serialize)]
@@ -69,8 +71,10 @@ pub struct GameView<'a> {
 #[derive(Clone, Copy, Default)]
 pub struct ControlOutput {
     pub thrust: f32,
-    pub turn: f32,
-} // -1..1
+    pub turn: f32, // -1..1
+    /// 달리기(Shift 홀드) 요청(KB-45). AI는 항상 false(달리기 미사용, YAGNI).
+    pub run: bool,
+}
 
 impl GameState {
     pub fn new_kickoff() -> Self {
@@ -86,6 +90,7 @@ impl GameState {
                 parts: Vec::new(),
                 down: Down::default(),
                 st: Vec::new(),
+                stamina: 1.0,
             })
             .collect();
         GameState {

@@ -30,10 +30,12 @@ pub fn parse_uplink(s: &str) -> Option<Uplink> {
             let fwd = v.get("fwd").and_then(Value::as_bool).unwrap_or(false);
             let back = v.get("back").and_then(Value::as_bool).unwrap_or(false);
             let turn = v.get("turn").and_then(Value::as_f64).unwrap_or(0.0) as f32;
+            let run = v.get("run").and_then(Value::as_bool).unwrap_or(false);
             let thrust = if fwd { 1.0 } else if back { -1.0 } else { 0.0 };
             Some(Uplink::Input(ControlOutput {
                 thrust,
                 turn: turn.clamp(-1.0, 1.0),
+                run,
             }))
         }
         "leave" => Some(Uplink::Leave),
@@ -60,8 +62,19 @@ mod tests {
         if let Some(Uplink::Input(out)) = u {
             assert_eq!(out.thrust, 1.0);
             assert_eq!(out.turn, -1.0);
+            assert!(!out.run, "run 미지정 시 기본 false");
         }
         assert!(matches!(parse_uplink(r#"{"t":"leave"}"#), Some(Uplink::Leave)));
+    }
+
+    #[test]
+    fn parses_run_flag_on_input_uplink() {
+        let u = parse_uplink(r#"{"t":"input","fwd":true,"turn":0,"run":true}"#);
+        if let Some(Uplink::Input(out)) = u {
+            assert!(out.run, "run:true가 파싱되어야 함");
+        } else {
+            panic!("input 파싱 실패");
+        }
     }
 
     #[test]

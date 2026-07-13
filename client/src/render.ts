@@ -27,13 +27,20 @@ export function render(ctx: CanvasRenderingContext2D, s: GameState): void {
     ctx.globalAlpha = 1.0;
 
     // HP바: 부위 중 최소 HP비율(가장 위험한 부위 기준)
+    const barW = 30, barH = 4;
     if (r.parts && r.parts.length > 0) {
       const minHp = Math.min(...r.parts.map(([, hp]) => hp));
-      const barW = 30, barH = 4;
       const bx = tx(r.pos.x) - barW / 2, by = ty(r.pos.y) - 22;
       ctx.fillStyle = "#222"; ctx.fillRect(bx, by, barW, barH);
       ctx.fillStyle = minHp > 0.5 ? "#3f3" : minHp > 0.2 ? "#fa3" : "#f33";
       ctx.fillRect(bx, by, barW * Math.max(0, minHp), barH);
+    }
+    // 스태미나바(KB-45): HP바 바로 아래에 작게 표시.
+    if (r.stamina !== undefined) {
+      const sbx = tx(r.pos.x) - barW / 2, sby = ty(r.pos.y) - 17;
+      ctx.fillStyle = "#222"; ctx.fillRect(sbx, sby, barW, 3);
+      ctx.fillStyle = "#3cf";
+      ctx.fillRect(sbx, sby, barW * Math.max(0, Math.min(1, r.stamina)), 3);
     }
 
     // 스턴/다운 상태 표시

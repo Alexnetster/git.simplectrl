@@ -1,15 +1,15 @@
 import { send } from "./net";
 
 /** 현재 눌린 키 상태. (01-UX §3: ↑↓ 이동, ←→ 회전 — 이동/회전 우선, 슛 등은 후속) */
-const keys = { up: false, down: false, left: false, right: false };
+const keys = { up: false, down: false, left: false, right: false, shift: false };
 
-type InputState = { fwd: boolean; back: boolean; turn: -1 | 0 | 1 };
+type InputState = { fwd: boolean; back: boolean; turn: -1 | 0 | 1; run: boolean };
 let lastSent: InputState | null = null;
 
 function computeInput(): InputState {
   // turn: ←=+1(좌회전), →=-1(우회전). 둘 다 눌리면 상쇄(0).
   const turn: -1 | 0 | 1 = keys.left === keys.right ? 0 : keys.left ? 1 : -1;
-  return { fwd: keys.up, back: keys.down, turn };
+  return { fwd: keys.up, back: keys.down, turn, run: keys.shift };
 }
 
 function sendIfChanged(): void {
@@ -18,10 +18,11 @@ function sendIfChanged(): void {
     lastSent === null ||
     cur.fwd !== lastSent.fwd ||
     cur.back !== lastSent.back ||
-    cur.turn !== lastSent.turn
+    cur.turn !== lastSent.turn ||
+    cur.run !== lastSent.run
   ) {
     lastSent = cur;
-    send({ t: "input", fwd: cur.fwd, back: cur.back, turn: cur.turn });
+    send({ t: "input", fwd: cur.fwd, back: cur.back, turn: cur.turn, run: cur.run });
   }
 }
 
@@ -38,6 +39,9 @@ function handleKey(e: KeyboardEvent, pressed: boolean): void {
       break;
     case "ArrowRight":
       keys.right = pressed;
+      break;
+    case "Shift":
+      keys.shift = pressed;
       break;
     default:
       return;
