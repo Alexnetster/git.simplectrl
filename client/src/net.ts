@@ -12,6 +12,8 @@ export type Robot = {
   st?: string[];
   /** 스태미나 비율 0..1(KB-45). */
   stamina?: number;
+  /** 로드아웃/프리셋 id("striker"|"guard" 등). 렌더 외형 구분에 사용(KB-56). */
+  robot?: string;
 };
 export type Ball = { pos: Vec2 };
 /** 슬롯별 조종 주체(KB-55): index 0=Blue, 1=Red, 값 "human"|"ai". */

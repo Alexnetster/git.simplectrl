@@ -81,7 +81,13 @@ function drawRobotBody(ctx: CanvasRenderingContext2D, r: Robot, phase: number, s
   const bodyFill = isBlue ? COL.blueBody : COL.redBody;
   const eyeCol = isBlue ? COL.blueEye : COL.redEye;
 
-  const bl = 11 * scale, bw = 8 * scale; // 몸통 반길이/반폭
+  // 타입별 외형(KB-56): 방어형(guard)=통통(폭↑·두꺼운 다리, 안 밀리는 느낌),
+  // 공격형(striker)=얇고 길쭉·가는 다리(스피디한 느낌). 미지 프리셋=기본.
+  const preset = r.robot ?? "";
+  const blf = preset === "striker" ? 1.14 : 1.0; // 반길이 배수
+  const bwf = preset === "guard" ? 1.42 : preset === "striker" ? 0.66 : 1.0; // 반폭 배수
+  const legW = preset === "guard" ? 2.9 : preset === "striker" ? 1.7 : 2.2; // 다리 굵기
+  const bl = 11 * scale * blf, bw = 8 * scale * bwf; // 몸통 반길이/반폭
 
   // 팀색 헤일로(뒤쪽, 은은하게)
   ctx.save();
@@ -116,7 +122,7 @@ function drawRobotBody(ctx: CanvasRenderingContext2D, r: Robot, phase: number, s
 
     ctx.strokeStyle = teamCol;
     ctx.globalAlpha = 0.85;
-    ctx.lineWidth = 2.2 * scale;
+    ctx.lineWidth = legW * scale;
     ctx.beginPath();
     ctx.moveTo(l.x, l.y);
     ctx.lineTo(kneeX, kneeY);
