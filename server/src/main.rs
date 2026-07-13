@@ -13,17 +13,21 @@ mod session;
 mod stamina;
 
 use accumulator::Accumulator;
-use control::{ChaseBallAi, Controller};
+use control::{ChaseBallAi, Controller, DefenderAi};
 use human::HumanController;
 use physics::PhysicsWorld;
 use session::{SessionId, Uplink};
 use std::sync::Arc;
 use tokio::sync::{mpsc, watch};
 use tokio::time::{interval, Duration, Instant};
-use world::{GameState, Team};
+use world::Team;
 
 /// 슬롯(로봇)마다 Controller를 AI↔사람으로 스왑한다. sim 태스크가 배타 소유
 /// (Mutex 불필요). `owner`는 그 슬롯을 현재 잡고 있는 세션(사람일 때만 Some).
+///
+/// 로스터(고정, KB-57): 0=Blue striker, 1=Blue guard, 2=Red striker, 3=Red guard.
+/// 사람은 자기 팀의 striker(0 또는 2)만 조종할 수 있고, guard(1/3)는 항상 AI
+/// (DefenderAi)로 남아 협동 역할 분담이 깨지지 않는다.
 struct SlotControllers {
     ctrls: Vec<Box<dyn Controller>>,
     owner: Vec<Option<SessionId>>,
@@ -32,15 +36,21 @@ struct SlotControllers {
 impl SlotControllers {
     fn new_ai() -> Self {
         Self {
-            ctrls: vec![Box::new(ChaseBallAi::default()), Box::new(ChaseBallAi::default())],
-            owner: vec![None, None],
+            ctrls: vec![
+                Box::new(ChaseBallAi::default()), // 0: Blue striker(Attacker)
+                Box::new(DefenderAi::default()),  // 1: Blue guard(Defender)
+                Box::new(ChaseBallAi::default()), // 2: Red striker(Attacker)
+                Box::new(DefenderAi::default()),  // 3: Red guard(Defender)
+            ],
+            owner: vec![None, None, None, None],
         }
     }
 
+    /// 팀 → 그 팀의 striker 슬롯 인덱스(사람이 조종 가능한 유일한 슬롯).
     fn slot_index(team: Team) -> usize {
         match team {
             Team::Blue => 0,
-            Team::Red => 1,
+            Team::Red => 2,
         }
     }
 
@@ -102,28 +112,23 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[tokio::main]
 async fn main() {
-    let (tx, rx) = watch::channel(GameState::new_kickoff());
+    // 4대 매치(팀당 공격형+수비형, 로스터 고정) 월드를 먼저 만들어 그 스냅샷으로
+    // 초기 방송 상태를 시드한다 — 물리 루프가 첫 틱을 발행하기 전에도 다운링크
+    // ctrl/robots 길이가 항상 4로 일관되게 유지된다.
+    let mut world = PhysicsWorld::new_match();
+    let (tx, rx) = watch::channel(world.snapshot());
     let (uplink_tx, mut uplink_rx) = mpsc::unbounded_channel::<(SessionId, Uplink)>();
 
     // 물리 루프: ~120Hz 프레임을 실제 경과 시간으로 계측해 고정스텝 누산기에
     // 먹이고, 누산된 만큼 물리를 전진(고정 dt). 2스텝마다(=30Hz) 상태 발행.
     tokio::spawn(async move {
-        // 비대칭 프리셋: Blue=striker(빠름), Red=guard(가속/질량↑).
-        let cat = parts::catalog();
-        let mut world = PhysicsWorld::new_kickoff_with(
-            [
-                parts::aggregate(&cat, "striker"),
-                parts::aggregate(&cat, "guard"),
-            ],
-            ["striker".to_string(), "guard".to_string()],
-        );
         let mut slots = SlotControllers::new_ai();
         let mut acc = Accumulator::new(world::DT);
         let mut ticker = interval(Duration::from_millis(8)); // ~120Hz 프레임
         let mut last = Instant::now();
         let mut since_pub: u32 = 0;
-        // AFK 자동 해제(KB-55): 슬롯별 마지막 활동(join/input) 시각.
-        let mut last_input = [Instant::now(); 2];
+        // AFK 자동 해제(KB-55): 슬롯별 마지막 활동(join/input) 시각. 슬롯 수(4)만큼.
+        let mut last_input = vec![Instant::now(); slots.ctrls.len()];
         loop {
             ticker.tick().await;
             // 업링크 논블로킹 드레인 → 슬롯 컨트롤러(AI↔사람) 반영.
@@ -136,8 +141,9 @@ async fn main() {
                 }
             }
             let now = Instant::now();
-            // AFK 타이머: 사람 점유 슬롯이 IDLE_TIMEOUT 동안 무입력이면 강제 leave.
-            for i in 0..2 {
+            // AFK 타이머: 사람 점유 슬롯(striker만 해당)이 IDLE_TIMEOUT 동안
+            // 무입력이면 강제 leave. guard 슬롯은 애초 사람 소유가 안 되므로 no-op.
+            for i in 0..last_input.len() {
                 if slots.is_human(i) && now.duration_since(last_input[i]) > IDLE_TIMEOUT {
                     if let Some(sid) = slots.owner[i] {
                         slots.apply(Uplink::Leave, sid);
@@ -155,8 +161,8 @@ async fn main() {
                 since_pub = 0;
                 let mut snap = world.snapshot();
                 // 물리 레이어는 소유자를 모르므로 항상 "ai"를 채운다; 사람 점유
-                // 슬롯만 여기서 "human"으로 덮어써 다운링크에 반영(KB-55).
-                for i in 0..2 {
+                // 슬롯(striker)만 여기서 "human"으로 덮어써 다운링크에 반영(KB-55).
+                for i in 0..snap.ctrl.len() {
                     if slots.is_human(i) {
                         snap.ctrl[i] = "human".to_string();
                     }
@@ -300,5 +306,31 @@ mod tests {
             ball: &ball,
         });
         assert_eq!(out.thrust, 1.0, "같은 슬롯 재-join 시 보유 입력 보존");
+    }
+
+    /// KB-57: 로스터 고정(0=Blue striker,1=Blue guard,2=Red striker,3=Red guard).
+    /// join(Blue)은 striker(0)만 사람으로 바꾸고 guard(1)는 AI로 남아야 하며,
+    /// leave 시 0은 다시 AI(Attacker)로 복귀해야 한다.
+    #[test]
+    fn join_blue_makes_striker_human_guard_stays_ai_then_leave_reverts() {
+        let mut slots = SlotControllers::new_ai();
+        assert_eq!(slots.ctrls.len(), 4, "로스터는 4대여야 함");
+        assert!(!slots.is_human(0) && !slots.is_human(1));
+        slots.apply(Uplink::Join(Team::Blue), 1);
+        assert!(slots.is_human(0), "Blue striker(0)가 사람이어야 함");
+        assert!(!slots.is_human(1), "Blue guard(1)는 항상 AI로 남아야 함");
+        assert!(!slots.is_human(2) && !slots.is_human(3), "Red 슬롯은 영향받지 않아야 함");
+        slots.apply(Uplink::Leave, 1);
+        assert!(!slots.is_human(0), "leave 후 striker(0)는 AI로 복귀해야 함");
+    }
+
+    /// join(Red)은 Red striker(슬롯 2)를 사람으로 바꾼다(팀→striker 인덱스 매핑).
+    #[test]
+    fn join_red_makes_slot_two_human() {
+        let mut slots = SlotControllers::new_ai();
+        slots.apply(Uplink::Join(Team::Red), 1);
+        assert!(slots.is_human(2), "Red striker(2)가 사람이어야 함");
+        assert!(!slots.is_human(3), "Red guard(3)는 AI로 남아야 함");
+        assert!(!slots.is_human(0) && !slots.is_human(1), "Blue 슬롯은 영향받지 않아야 함");
     }
 }

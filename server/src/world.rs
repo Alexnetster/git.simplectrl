@@ -6,8 +6,24 @@ pub const GOAL_W: f32 = 2.4;
 pub const DT: f32 = 1.0 / 60.0; // fixed timestep
 
 /// 킥오프 로봇 배치 (x, rot) — index 0 = Blue, 1 = Red. 단일 소스.
-/// physics(new_kickoff/reset_kickoff)와 GameState::new_kickoff가 공유한다.
+/// physics(new_kickoff_with)와 GameState::new_kickoff가 공유한다.
+/// (2대 레거시 레이아웃 — 다수의 물리 테스트가 의존하므로 값을 바꾸지 않는다.)
+/// 실행 바이너리는 `PhysicsWorld::new_match`(4대)를 쓰므로 테스트 전용.
+#[cfg(test)]
 pub const KICKOFF: [(f32, f32); 2] = [(-3.0, 0.0), (3.0, std::f32::consts::PI)];
+
+/// 4대 매치(팀당 공격형+수비형) 킥오프 배치 (x, y, rot). 단일 소스 —
+/// `PhysicsWorld::new_match`가 로봇 생성과 득점 후 리셋(`reset_kickoff`) 모두에 쓴다.
+/// 로스터(고정): 0=Blue striker, 1=Blue guard, 2=Red striker, 3=Red guard.
+/// Blue는 왼쪽(x<0)/Red는 오른쪽(x>0), 공격형은 중앙 쪽, 수비형은 자기 골 쪽에 배치하고
+/// y를 서로 어긋나게 둬 킥오프 직후 곧바로 아군끼리 부딪히지 않게 한다.
+/// 튜닝 여지: 좌표/간격은 플레이테스트 대상.
+pub const MATCH_KICKOFF: [(f32, f32, f32); 4] = [
+    (-2.0, -1.2, 0.0),                 // 0: Blue striker
+    (-4.2, 1.2, 0.0),                  // 1: Blue guard
+    (2.0, 1.2, std::f32::consts::PI),  // 2: Red striker
+    (4.2, -1.2, std::f32::consts::PI), // 3: Red guard
+];
 
 #[derive(Clone, Copy, PartialEq, Debug, Serialize)]
 pub struct Vec2 {
@@ -84,6 +100,9 @@ pub struct ControlOutput {
 }
 
 impl GameState {
+    /// 2대 레거시 킥오프 상태(테스트 전용 — 실행 바이너리는 `PhysicsWorld::new_match`의
+    /// 스냅샷으로 4대 상태를 시드한다).
+    #[cfg(test)]
     pub fn new_kickoff() -> Self {
         let robots: Vec<RobotState> = KICKOFF
             .iter()

@@ -32,48 +32,59 @@ const AI_KICK_RANGE: f32 = 0.85;
 const AI_KICK_FRONT_COS: f32 = 0.5; // 공이 정면 ~60° 이내
 const AI_KICK_GOAL_COS: f32 = 0.55; // 상대 골 방향 ~57° 이내(정렬됐을 때만 슛)
 
-impl ChaseBallAi {
-    /// 필드 중앙(y=0) 쪽으로 도는 turn 부호. 위쪽(+y) 벽이면 CW로 내려오게.
-    fn escape_turn(pos_y: f32) -> f32 {
-        if pos_y >= 0.0 { -1.0 } else { 1.0 }
-    }
+/// Attacker(ChaseBallAi)/Defender(DefenderAi) 공용 헬퍼. 스턱 탈출·슛 판정은
+/// 역할과 무관한 순수 로직이라 자유 함수로 공유한다(KB-57: 협동 AI 역할 분담).
+///
+/// 필드 중앙(y=0) 쪽으로 도는 turn 부호. 위쪽(+y) 벽이면 CW로 내려오게.
+fn escape_turn(pos_y: f32) -> f32 {
+    if pos_y >= 0.0 { -1.0 } else { 1.0 }
+}
 
-    /// 상대 골 x좌표. 블루는 +x, 레드는 −x로 공격(physics::check_goal과 동일 규약).
-    fn enemy_goal_x(team: Team) -> f32 {
-        match team {
-            Team::Blue => FIELD_W / 2.0,
-            Team::Red => -FIELD_W / 2.0,
-        }
+/// 후진하며 중앙 쪽으로 회전(벽에서 멀어짐).
+fn escape_output(pos_y: f32) -> ControlOutput {
+    ControlOutput {
+        thrust: -1.0,
+        turn: escape_turn(pos_y),
+        run: false,
+        kick: false,
     }
+}
 
-    /// 공이 정면 사거리 안 + 정면이 상대 골 방향으로 정렬 → 슛(자책골 회피).
-    fn wants_kick(view: &GameView) -> bool {
-        let (fx, fy) = (view.me.rot.cos(), view.me.rot.sin());
-        let bdx = view.ball.pos.x - view.me.pos.x;
-        let bdy = view.ball.pos.y - view.me.pos.y;
-        let bdist = (bdx * bdx + bdy * bdy).sqrt();
-        if bdist > AI_KICK_RANGE {
-            return false;
-        }
-        // 공이 정면 콘 안(거리≈0이면 정면으로 간주).
-        let ball_front = bdist <= 1e-6 || (fx * bdx + fy * bdy) / bdist >= AI_KICK_FRONT_COS;
-        // 정면이 상대 골 방향으로 정렬(자책골 방지).
-        let gdx = Self::enemy_goal_x(view.me.id) - view.me.pos.x;
-        let gdy = -view.me.pos.y;
-        let gdist = (gdx * gdx + gdy * gdy).sqrt();
-        let goalward = gdist <= 1e-6 || (fx * gdx + fy * gdy) / gdist >= AI_KICK_GOAL_COS;
-        ball_front && goalward
+/// 상대 골 x좌표. 블루는 +x, 레드는 −x로 공격(physics::check_goal과 동일 규약).
+fn enemy_goal_x(team: Team) -> f32 {
+    match team {
+        Team::Blue => FIELD_W / 2.0,
+        Team::Red => -FIELD_W / 2.0,
     }
+}
 
-    /// 후진하며 중앙 쪽으로 회전(벽에서 멀어짐).
-    fn escape_output(pos_y: f32) -> ControlOutput {
-        ControlOutput {
-            thrust: -1.0,
-            turn: Self::escape_turn(pos_y),
-            run: false,
-            kick: false,
-        }
+/// 자기 골 x좌표(enemy_goal_x의 반대편 — check_goal 규약과 정합). DefenderAi가
+/// 지킬 위치를 정하는 데 쓴다.
+fn own_goal_x(team: Team) -> f32 {
+    match team {
+        Team::Blue => -FIELD_W / 2.0,
+        Team::Red => FIELD_W / 2.0,
     }
+}
+
+/// 공이 정면 사거리 안 + 정면이 상대 골 방향으로 정렬 → 슛(자책골 회피).
+/// Attacker/Defender 공용(둘 다 자책골 회피 조건은 동일해야 함).
+fn wants_kick(view: &GameView) -> bool {
+    let (fx, fy) = (view.me.rot.cos(), view.me.rot.sin());
+    let bdx = view.ball.pos.x - view.me.pos.x;
+    let bdy = view.ball.pos.y - view.me.pos.y;
+    let bdist = (bdx * bdx + bdy * bdy).sqrt();
+    if bdist > AI_KICK_RANGE {
+        return false;
+    }
+    // 공이 정면 콘 안(거리≈0이면 정면으로 간주).
+    let ball_front = bdist <= 1e-6 || (fx * bdx + fy * bdy) / bdist >= AI_KICK_FRONT_COS;
+    // 정면이 상대 골 방향으로 정렬(자책골 방지).
+    let gdx = enemy_goal_x(view.me.id) - view.me.pos.x;
+    let gdy = -view.me.pos.y;
+    let gdist = (gdx * gdx + gdy * gdy).sqrt();
+    let goalward = gdist <= 1e-6 || (fx * gdx + fy * gdy) / gdist >= AI_KICK_GOAL_COS;
+    ball_front && goalward
 }
 
 impl Controller for ChaseBallAi {
@@ -86,7 +97,7 @@ impl Controller for ChaseBallAi {
         if self.escape > 0 {
             self.escape -= 1;
             self.stuck = 0;
-            return Self::escape_output(view.me.pos.y);
+            return escape_output(view.me.pos.y);
         }
         // 정지 지속 추적(공을 밀어도 벽에 막혀 속도가 안 나는 상태).
         let speed = (view.me.vel.x * view.me.vel.x + view.me.vel.y * view.me.vel.y).sqrt();
@@ -98,7 +109,7 @@ impl Controller for ChaseBallAi {
         if self.stuck >= STUCK_LIMIT {
             self.stuck = 0;
             self.escape = ESCAPE_FRAMES;
-            return Self::escape_output(view.me.pos.y);
+            return escape_output(view.me.pos.y);
         }
 
         // 평소: 공을 향해 전진.
@@ -119,7 +130,90 @@ impl Controller for ChaseBallAi {
             run: false,
             // 슛(KB-52): 정면 사거리 안 + 상대 골 정렬 시에만. 서버가 상승엣지로 1회
             // 발사하므로, 사거리 안에서 kick=true를 유지해도 재발사는 쿨다운/엣지가 관리.
-            kick: Self::wants_kick(view),
+            kick: wants_kick(view),
+        }
+    }
+}
+
+/// 자기 골을 지키는 수비형 AI(KB-57). 협동 역할 분담: 공격형은 `ChaseBallAi`(이름
+/// 그대로 유지, 회귀 최소화)를 그대로 쓴다. 공을 직접 쫓지 않고 **자기 골과 공을 잇는
+/// 선 위, 자기 골에서 `DEFENDER_GUARD_DIST` 이내 지점**을 목표로 움직인다:
+/// 공이 자기 진영 가까이 오면 그 위치까지 나가서 막고, 멀리 있으면 골 앞에서
+/// 대기한다. 공격형(ChaseBallAi)과 목표가 근본적으로 달라 공에 뭉치지 않는다.
+/// 스턱 탈출·슛(자책골 회피) 판정은 공격형과 동일 로직을 공유한다.
+#[derive(Default)]
+pub struct DefenderAi {
+    /// 정지(속도<STUCK_SPEED) 지속 프레임 수.
+    stuck: u32,
+    /// 남은 탈출 기동 프레임(>0이면 후진+회전).
+    escape: u32,
+}
+
+/// 수비형이 자기 골에서 벗어나는 최대 거리(m). 공이 이보다 가까우면 공 쪽으로
+/// 나가 막고, 멀면 이 거리에서 골 앞을 지킨다(튜닝 대상).
+const DEFENDER_GUARD_DIST: f32 = 2.5;
+
+impl DefenderAi {
+    /// 자기 골과 공을 잇는 선 위, 자기 골에서 `DEFENDER_GUARD_DIST` 이내 지점을
+    /// 목표로 계산한다(순수 함수, 테스트 용이).
+    fn guard_target(team: Team, ball: &BallState) -> (f32, f32) {
+        let gx = own_goal_x(team);
+        let gy = 0.0;
+        let dx = ball.pos.x - gx;
+        let dy = ball.pos.y - gy;
+        let dist = (dx * dx + dy * dy).sqrt();
+        if dist <= 1e-6 {
+            return (gx, gy);
+        }
+        let clamped = dist.min(DEFENDER_GUARD_DIST);
+        let k = clamped / dist;
+        (gx + dx * k, gy + dy * k)
+    }
+}
+
+impl Controller for DefenderAi {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn decide(&mut self, view: &GameView) -> ControlOutput {
+        // 탈출 기동 진행 중: 끝날 때까지 후진+회전(공격형과 동일 로직).
+        if self.escape > 0 {
+            self.escape -= 1;
+            self.stuck = 0;
+            return escape_output(view.me.pos.y);
+        }
+        let speed = (view.me.vel.x * view.me.vel.x + view.me.vel.y * view.me.vel.y).sqrt();
+        if speed < STUCK_SPEED {
+            self.stuck += 1;
+        } else {
+            self.stuck = 0;
+        }
+        if self.stuck >= STUCK_LIMIT {
+            self.stuck = 0;
+            self.escape = ESCAPE_FRAMES;
+            return escape_output(view.me.pos.y);
+        }
+
+        // 평소: 자기 골 지킴 목표 지점을 향해 이동(공 자체를 쫓지 않음 → 공격형과
+        // 뭉치지 않는다).
+        let (tx, ty) = Self::guard_target(view.me.id, view.ball);
+        let dx = tx - view.me.pos.x;
+        let dy = ty - view.me.pos.y;
+        let target = dy.atan2(dx);
+        let mut diff = target - view.me.rot;
+        while diff > std::f32::consts::PI {
+            diff -= std::f32::consts::TAU;
+        }
+        while diff < -std::f32::consts::PI {
+            diff += std::f32::consts::TAU;
+        }
+        ControlOutput {
+            thrust: 1.0,
+            turn: diff.clamp(-1.0, 1.0),
+            run: false,
+            // 클리어 슛: 정면 사거리 + 상대 골 정렬 시에만(공격형과 동일 조건 공유).
+            kick: wants_kick(view),
         }
     }
 }
@@ -246,5 +340,97 @@ mod tests {
         for _ in 0..(STUCK_LIMIT * 3) {
             assert!(ai.decide(&view).thrust > 0.0, "정상 주행 중엔 항상 전진");
         }
+    }
+
+    // -- DefenderAi(KB-57: 협동 AI 역할 분담) -----------------------------------
+
+    /// 공이 상대 진영 멀리 있을 때, 수비형의 목표 지점은 자기 골에서
+    /// DEFENDER_GUARD_DIST 이내여야 한다(뭉치지 않고 골 앞을 지킴).
+    #[test]
+    fn defender_target_stays_near_own_goal_when_ball_is_far() {
+        let ball = BallState {
+            pos: Vec2 { x: 5.0, y: 1.0 }, // 블루 기준 상대 진영 멀리
+            vel: Vec2 { x: 0.0, y: 0.0 },
+        };
+        let (tx, ty) = DefenderAi::guard_target(Team::Blue, &ball);
+        let own_goal_x = -FIELD_W / 2.0;
+        let dist = ((tx - own_goal_x).powi(2) + ty.powi(2)).sqrt();
+        assert!(
+            dist <= DEFENDER_GUARD_DIST + 1e-3,
+            "공이 멀면 목표는 자기 골 근처에 머물러야 함 (target=({tx},{ty}), dist={dist})"
+        );
+    }
+
+    /// 공격형은 공이 아무리 멀어도 공 자체를 목표로 조준(뭉치지 않게 역할이 다름을 구분).
+    /// 대조: 같은 상황에서 수비형의 목표는 자기 골 근처(위 테스트)에 머무른다.
+    #[test]
+    fn attacker_targets_ball_directly_unlike_defender() {
+        let (me, ball) = view_at(Team::Blue, Vec2 { x: -4.0, y: 0.0 }, 0.0, Vec2 { x: 5.0, y: 1.0 });
+        let mut attacker = ChaseBallAi::default();
+        let out = attacker.decide(&GameView { me: &me, ball: &ball });
+        assert!(out.thrust > 0.0, "공격형은 항상 공 쪽으로 전진");
+        // rot=0이므로 turn은 공 방향각(클램프)과 정확히 일치해야 한다.
+        let to_ball_angle = (ball.pos.y - me.pos.y).atan2(ball.pos.x - me.pos.x);
+        assert_eq!(out.turn, to_ball_angle.clamp(-1.0, 1.0), "공격형 조준각은 공 방향과 일치해야 함");
+    }
+
+    /// 공이 자기 골 가까이 오면 수비형은 나가서 막는다(전진).
+    #[test]
+    fn defender_advances_when_ball_is_close_to_own_goal() {
+        let (me, ball) = view_at(
+            Team::Blue,
+            Vec2 { x: -6.0, y: 0.0 },
+            0.0,
+            Vec2 { x: -5.0, y: 0.5 }, // 자기 골(-6.0) 근처
+        );
+        let mut defender = DefenderAi::default();
+        let out = defender.decide(&GameView { me: &me, ball: &ball });
+        assert!(out.thrust > 0.0, "공이 가까우면 나가서 막아야 함");
+    }
+
+    /// 수비형도 정면 사거리+상대 골 정렬이면 클리어 슛(공격형과 동일 조건 공유).
+    #[test]
+    fn defender_kicks_when_ball_in_front_toward_enemy_goal() {
+        let (me, ball) = view_at(Team::Blue, Vec2 { x: 0.0, y: 0.0 }, 0.0, Vec2 { x: 0.6, y: 0.0 });
+        let mut ai = DefenderAi::default();
+        assert!(ai.decide(&GameView { me: &me, ball: &ball }).kick, "정렬+사거리 내 → 슛");
+    }
+
+    /// 수비형도 자책골 방향이면 안 참(공격형과 동일 회피 로직 공유).
+    #[test]
+    fn defender_does_not_kick_toward_own_goal() {
+        let (me, ball) = view_at(Team::Blue, Vec2 { x: 0.0, y: 0.0 }, std::f32::consts::PI, Vec2 { x: -0.6, y: 0.0 });
+        let mut ai = DefenderAi::default();
+        assert!(!ai.decide(&GameView { me: &me, ball: &ball }).kick, "자기 골 방향이면 무슛");
+    }
+
+    /// 수비형도 벽에 박혀 정지 지속 시 후진 탈출 기동으로 전환해야 한다(공격형과 공유 로직).
+    #[test]
+    fn defender_stuck_against_wall_triggers_reverse_escape() {
+        let robot = RobotState {
+            id: Team::Blue,
+            pos: Vec2 { x: 5.5, y: 3.5 },
+            rot: 0.0,
+            vel: Vec2 { x: 0.0, y: 0.0 },
+            robot: String::new(),
+            parts: Vec::new(),
+            down: Down::default(),
+            st: Vec::new(),
+            stamina: 1.0,
+        };
+        let ball = BallState {
+            pos: Vec2 { x: 6.5, y: 4.5 },
+            vel: Vec2 { x: 0.0, y: 0.0 },
+        };
+        let view = GameView { me: &robot, ball: &ball };
+        let mut ai = DefenderAi::default();
+        let mut escaped = false;
+        for _ in 0..(STUCK_LIMIT + ESCAPE_FRAMES + 5) {
+            if ai.decide(&view).thrust < 0.0 {
+                escaped = true;
+                break;
+            }
+        }
+        assert!(escaped, "정지 지속 시 수비형도 후진 탈출 기동이 나와야 함");
     }
 }

@@ -33,10 +33,11 @@ function lerpAngle(a: number, b: number, t: number): number {
 
 function interpolateState(s0: GameState, s1: GameState, alphaRaw: number): GameState {
   const t = Math.max(0, Math.min(1, alphaRaw));
-  const byId = new Map(s0.robots.map((r) => [r.id, r] as const));
-  const robots: Robot[] = s1.robots.map((r1) => {
-    const r0 = byId.get(r1.id);
-    if (!r0) return r1; // 새로 등장한 로봇 등 매칭 불가 시 보간 없이 최신값
+  // 인덱스 기반 매칭(KB-57): 팀당 2대라 r.id가 유일하지 않으므로 id로 매칭하면
+  // 같은 팀 로봇이 뭉개진다. 서버는 로봇을 고정 순서로 방출하므로 위치(i)로 매칭.
+  const robots: Robot[] = s1.robots.map((r1, i) => {
+    const r0 = s0.robots[i];
+    if (!r0) return r1; // 개수 변동 등 매칭 불가 시 보간 없이 최신값
     return {
       ...r1, // 이산 필드(parts/down/st/stamina 등)는 최신 스냅샷 값 유지
       pos: { x: lerp(r0.pos.x, r1.pos.x, t), y: lerp(r0.pos.y, r1.pos.y, t) },

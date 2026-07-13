@@ -56,6 +56,9 @@ _(비어 있음)_
 **Plan 7a — 넷코드 견고성 시연 ✅** (branch `feat/interactivity`)
 - [x] KB-50 보간 + 서버 아웃바운드 링크심(지연/지터/드랍) + ping/RTT + 개발패널 (테스트: 서버 81/81, debug+release warning 0, 클라 빌드 clean, sim/리플레이 불변) *(인바운드·재연결·예측 제외 = YAGNI)*
 
+**팀 로스터/협동 ✅** (branch `feat/interactivity`)
+- [x] KB-57 팀당 2대(공격형 striker + 방어형 guard, 총 4대) + 협동 AI(역할 분담: 공격=추적·슛 / 수비=골 지킴·클리어) + 친선 데미지 금지. 사람은 팀 striker만 조종. 2대 레거시 생성자 보존, 신규 new_match(4대) ([ADR-015]). (서버 97/97, debug+release warning 0, 클라 빌드 clean; 클라 gait·interp 인덱스 매칭 수정)
+
 **플레이테스트 후속 ✅** (branch `feat/interactivity`)
 - [x] KB-56 모델 외형 구분 — guard=통통(폭↑·두꺼운 다리), striker=얇고 길쭉·가는 다리. 스냅샷 `robot` 프리셋 id로 렌더 사이징(클라 전용)
 - [x] KB-55 슬롯 참가 UX — 참가 버튼 토글(내 팀=나가기/타 팀=전환), AFK 30초 자동 해제→AI, 참가 상태 표시(사람/AI/YOU 배지). 스냅샷 `ctrl[]` 방출, 클라 낙관적 추적+`ctrl` 재조정(세션id 미도입). (서버 85/85, 클라 빌드 clean, DOM id 18개 정합)

@@ -1,5 +1,5 @@
 use crate::combat::CombatState;
-use crate::parts::StatSet;
+use crate::parts::{self, StatSet};
 use crate::stamina::StaminaState;
 use crate::world::*;
 use rapier2d::prelude::*;
@@ -65,6 +65,8 @@ fn tag(robot: usize, part: usize) -> u128 {
 
 /// 충돌 쌍이 데미지 대상인지 판정(순수). 둘 다 로봇 부위(Some)이고 **서로 다른 로봇**일 때만.
 /// 벽/공(None)·같은 로봇 부위 쌍은 무데미지. 결정성 위해 (robot,part) 오름차순 정규화.
+/// 팀(친선 데미지) 판정은 팀 정보가 없는 이 순수 함수가 아니라 호출부
+/// (`apply_collision_damage`, `self.teams` 접근 가능)에서 추가로 필터링한다.
 fn damage_pair(
     a: Option<(usize, usize)>,
     b: Option<(usize, usize)>,
@@ -93,6 +95,11 @@ pub struct PhysicsWorld {
     robots: Vec<RigidBodyHandle>,
     stats: Vec<StatSet>,
     preset_ids: Vec<String>,
+    /// 로봇별 팀(로스터 고정). 친선 데미지 금지 판정 + 스냅샷 `id`에 쓰인다.
+    teams: Vec<Team>,
+    /// 득점 후 리셋 배치(x, y, rot). 생성 시 저장해 `reset_kickoff`가 로봇 수(2/4)에
+    /// 무관하게 재사용한다(KB-57: `world::KICKOFF` const 직접 의존 제거).
+    kickoff_layout: Vec<(f32, f32, f32)>,
     /// 로봇 부위 콜라이더 멤버십+디코드: handle → (robot_idx, part_idx).
     /// 벽/공은 부재 → 오데미지 방지(둘 다 멤버인 쌍만 데미지).
     part_map: HashMap<ColliderHandle, (usize, usize)>,
@@ -110,7 +117,7 @@ pub struct PhysicsWorld {
 
 impl PhysicsWorld {
     /// 기본 스탯(기존 하드코딩 등가)으로 위임 — 기존 물리/골/tick 테스트 보존.
-    /// 실행 바이너리는 `new_kickoff_with`(프리셋 배정)를 쓰므로 테스트 전용.
+    /// 실행 바이너리는 `new_match`(4대 로스터)를 쓰므로 테스트 전용.
     #[cfg(test)]
     pub fn new_kickoff() -> Self {
         use crate::parts::default_stats;
@@ -120,9 +127,57 @@ impl PhysicsWorld {
         )
     }
 
-    /// 로봇별 스탯/프리셋 id를 받아 킥오프 월드를 만든다.
+    /// 로봇별 스탯/프리셋 id를 받아 **2대** 킥오프 월드를 만든다(기존 시그니처·동작
+    /// 유지 — 수많은 물리 테스트가 이 2대 레이아웃에 의존하므로 절대 깨면 안 됨).
+    /// 배치는 `world::KICKOFF`(y=0 고정) 단일 소스. index 0=Blue, 1=Red(서로 다른
+    /// 팀이라 친선 데미지 금지 규칙과 무관하게 기존처럼 상호 데미지가 적용된다).
     /// `stats[i].mass`는 콜라이더 밀도 유래 질량에 **가산**(mass=0=no-op).
+    /// 실행 바이너리는 `new_match`(4대 로스터)를 쓰므로 테스트 전용.
+    #[cfg(test)]
     pub fn new_kickoff_with(stats: [StatSet; 2], preset_ids: [String; 2]) -> Self {
+        let layout: Vec<(f32, f32, f32)> = KICKOFF.iter().map(|&(x, rot)| (x, 0.0, rot)).collect();
+        Self::build(
+            stats.to_vec(),
+            preset_ids.to_vec(),
+            layout,
+            vec![Team::Blue, Team::Red],
+        )
+    }
+
+    /// 팀당 공격형(striker)+수비형(guard) 1대씩, 총 **4대**(로스터 고정)로 매치 월드를
+    /// 만든다. 로스터: 0=Blue striker, 1=Blue guard, 2=Red striker, 3=Red guard
+    /// (`world::MATCH_KICKOFF` 배치와 정합). 모델 선택 없음(프리셋 고정) — 실행
+    /// 바이너리(main)가 이 생성자를 쓴다.
+    pub fn new_match() -> Self {
+        let cat = parts::catalog();
+        let stats = vec![
+            parts::aggregate(&cat, "striker"), // 0: Blue striker
+            parts::aggregate(&cat, "guard"),   // 1: Blue guard
+            parts::aggregate(&cat, "striker"), // 2: Red striker
+            parts::aggregate(&cat, "guard"),   // 3: Red guard
+        ];
+        let preset_ids = vec![
+            "striker".to_string(),
+            "guard".to_string(),
+            "striker".to_string(),
+            "guard".to_string(),
+        ];
+        let teams = vec![Team::Blue, Team::Blue, Team::Red, Team::Red];
+        let layout: Vec<(f32, f32, f32)> = MATCH_KICKOFF.to_vec();
+        Self::build(stats, preset_ids, layout, teams)
+    }
+
+    /// 공통 빌더: 로봇 수(N=2 또는 4)에 무관하게 필드/펜스/파츠 콜라이더를 구성한다.
+    /// `layout[i]`=(x,y,rot) 초기 배치(리셋 시 재사용을 위해 `kickoff_layout`에 저장),
+    /// `teams[i]`=팀(친선 데미지 판정 + 스냅샷 `id`에 쓰임).
+    fn build(
+        stats: Vec<StatSet>,
+        preset_ids: Vec<String>,
+        layout: Vec<(f32, f32, f32)>,
+        teams: Vec<Team>,
+    ) -> Self {
+        assert_eq!(stats.len(), layout.len(), "스탯 수와 배치 수는 일치해야 함");
+        assert_eq!(stats.len(), teams.len(), "스탯 수와 팀 수는 일치해야 함");
         let mut bodies = RigidBodySet::new();
         let mut colliders = ColliderSet::new();
 
@@ -202,16 +257,16 @@ impl PhysicsWorld {
             &mut bodies,
         );
 
-        // 로봇 2대 (배치는 world::KICKOFF 단일 소스)
+        // 로봇 N대 (배치는 인자 layout 단일 소스)
         // 각 로봇 = 부위별 자식 콜라이더 복합 바디. user_data 태깅 + part_map 멤버십.
         let mut robots = Vec::new();
         let mut part_map: HashMap<ColliderHandle, (usize, usize)> = HashMap::new();
         let mut combat = Vec::new();
         let mut stamina = Vec::new();
-        for (i, &(x, rot)) in KICKOFF.iter().enumerate() {
+        for (i, &(x, y, rot)) in layout.iter().enumerate() {
             let rb = bodies.insert(
                 RigidBodyBuilder::dynamic()
-                    .translation(vector![x, 0.0])
+                    .translation(vector![x, y])
                     .rotation(rot)
                     // 조작감 튜닝(1차): 2.0→2.6. 재방향 시 잔여 미끄럼을 더 빨리 죽여
                     // "회전-후-전진"이 덜 미끄럽게. 너무 높이면 관성이 사라져 뻣뻣해짐.
@@ -279,8 +334,10 @@ impl PhysicsWorld {
             query: QueryPipeline::new(),
             ball,
             robots,
-            stats: stats.to_vec(),
-            preset_ids: preset_ids.to_vec(),
+            stats,
+            preset_ids,
+            teams,
+            kickoff_layout: layout,
             part_map,
             combat,
             stamina,
@@ -435,7 +492,11 @@ impl PhysicsWorld {
             let a = self.part_map.get(&h1).copied();
             let b = self.part_map.get(&h2).copied();
             if let Some(pair) = damage_pair(a, b) {
-                hits.push(pair);
+                // 친선 데미지 금지(4대 로스터): 같은 팀 로봇끼리는 데미지/넉백/스턴 없음.
+                let ((ra, _), (rb, _)) = pair;
+                if self.teams[ra] != self.teams[rb] {
+                    hits.push(pair);
+                }
             }
         }
         // 2) 결정성 정렬
@@ -519,10 +580,10 @@ impl PhysicsWorld {
         b.set_translation(vector![0.0, 0.0], true);
         b.set_linvel(vector![0.0, 0.0], true);
         b.set_angvel(0.0, true);
-        // 로봇 (배치는 world::KICKOFF 단일 소스)
-        for (h, (x, rot)) in self.robots.iter().zip(KICKOFF) {
+        // 로봇 (배치는 생성 시 저장한 kickoff_layout — 2대/4대 생성자 공용)
+        for (h, &(x, y, rot)) in self.robots.iter().zip(self.kickoff_layout.iter()) {
             let rb = &mut self.bodies[*h];
-            rb.set_translation(vector![x, 0.0], true);
+            rb.set_translation(vector![x, y], true);
             rb.set_rotation(Rotation::new(rot), true);
             rb.set_linvel(vector![0.0, 0.0], true);
             rb.set_angvel(0.0, true);
@@ -603,7 +664,7 @@ impl PhysicsWorld {
                     st.push("shoot_lock".to_string());
                 }
                 RobotState {
-                    id: if i == 0 { Team::Blue } else { Team::Red },
+                    id: self.teams[i],
                     pos: to_vec2(rb.translation()),
                     rot: rb.rotation().angle(), // rapier가 정규화된 각도 반환
                     vel: to_vec2(rb.linvel()),
@@ -1390,5 +1451,105 @@ mod tests {
             st.iter().any(|s| s == "shoot_lock"),
             "발사 직후 쿨다운 동안 st에 shoot_lock이 노출되어야 함 (got {st:?})"
         );
+    }
+
+    // -- 4대 매치(팀당 공격형+수비형) ------------------------------------------
+
+    #[test]
+    fn new_match_has_four_robots_with_fixed_roster_and_presets() {
+        let w = PhysicsWorld::new_match();
+        let s = w.snapshot();
+        assert_eq!(s.robots.len(), 4, "팀당 2대(공격형+수비형), 총 4대여야 함");
+        assert_eq!(s.robots[0].id, Team::Blue);
+        assert_eq!(s.robots[1].id, Team::Blue);
+        assert_eq!(s.robots[2].id, Team::Red);
+        assert_eq!(s.robots[3].id, Team::Red);
+        assert_eq!(s.robots[0].robot, "striker", "0=Blue striker");
+        assert_eq!(s.robots[1].robot, "guard", "1=Blue guard");
+        assert_eq!(s.robots[2].robot, "striker", "2=Red striker");
+        assert_eq!(s.robots[3].robot, "guard", "3=Red guard");
+    }
+
+    #[test]
+    fn new_match_kickoff_places_blue_left_red_right_in_bounds() {
+        let w = PhysicsWorld::new_match();
+        let s = w.snapshot();
+        assert!(s.robots[0].pos.x < 0.0, "Blue striker는 왼쪽(x<0)");
+        assert!(s.robots[1].pos.x < 0.0, "Blue guard는 왼쪽(x<0)");
+        assert!(s.robots[2].pos.x > 0.0, "Red striker는 오른쪽(x>0)");
+        assert!(s.robots[3].pos.x > 0.0, "Red guard는 오른쪽(x>0)");
+        for r in &s.robots {
+            assert!(r.pos.x.abs() <= FIELD_W / 2.0, "필드 안에서 킥오프해야 함");
+            assert!(r.pos.y.abs() <= FIELD_H / 2.0, "필드 안에서 킥오프해야 함");
+        }
+    }
+
+    #[test]
+    fn friendly_fire_is_disabled_but_cross_team_contact_still_damages() {
+        // 같은 팀(0,1=Blue)을 근접 정면 배치하고 서로에게 돌진 → 무데미지여야 함.
+        // 나머지 로봇(2,3)은 필드 안 먼 곳으로 치워 간섭을 배제한다.
+        let mut w = PhysicsWorld::new_match();
+        w.set_ball_for_test(vector![0.0, 3.5], vector![0.0, 0.0]);
+        w.set_robot_for_test(0, vector![-0.4, 0.0], 0.0);
+        w.set_robot_for_test(1, vector![0.4, 0.0], std::f32::consts::PI);
+        w.set_robot_for_test(2, vector![5.0, 3.5], 0.0);
+        w.set_robot_for_test(3, vector![5.0, -3.5], 0.0);
+        let before_friendly = (w.hp_ratio_min(0), w.hp_ratio_min(1));
+        let toward = [ControlOutput {
+            thrust: 1.0,
+            turn: 0.0,
+            run: false,
+            kick: false,
+        }; 4];
+        for _ in 0..120 {
+            w.step(&toward);
+        }
+        let after_friendly = (w.hp_ratio_min(0), w.hp_ratio_min(1));
+        assert_eq!(
+            after_friendly, before_friendly,
+            "같은 팀 충돌은 무데미지여야 함 (before {before_friendly:?} after {after_friendly:?})"
+        );
+
+        // 다른 팀(0=Blue, 2=Red)을 근접 정면 배치하고 돌진 → 데미지가 나야 함.
+        let mut w2 = PhysicsWorld::new_match();
+        w2.set_ball_for_test(vector![0.0, 3.5], vector![0.0, 0.0]);
+        w2.set_robot_for_test(0, vector![-0.4, 0.0], 0.0);
+        w2.set_robot_for_test(2, vector![0.4, 0.0], std::f32::consts::PI);
+        w2.set_robot_for_test(1, vector![5.0, 3.5], 0.0);
+        w2.set_robot_for_test(3, vector![5.0, -3.5], 0.0);
+        let before_enemy = (w2.hp_ratio_min(0), w2.hp_ratio_min(2));
+        for _ in 0..120 {
+            w2.step(&toward);
+        }
+        let after_enemy = (w2.hp_ratio_min(0), w2.hp_ratio_min(2));
+        assert!(
+            after_enemy.0 < before_enemy.0 && after_enemy.1 < before_enemy.1,
+            "다른 팀 충돌은 데미지가 나야 함 (before {before_enemy:?} after {after_enemy:?})"
+        );
+    }
+
+    #[test]
+    fn new_match_reset_kickoff_uses_four_robot_layout() {
+        // 득점 후 리셋이 4대 레이아웃(world::MATCH_KICKOFF)을 그대로 복원하는지 확인.
+        let mut w = PhysicsWorld::new_match();
+        // robot1(Blue guard)을 골 입구 경로 밖으로 옮겨 슛을 가로막지 않게 격리
+        // (KB-43 ball_driven_into_right_goal_scores_blue와 동일한 격리 패턴).
+        for i in 1..4 {
+            w.set_robot_for_test(i, vector![0.0, FIELD_H / 2.0 - 0.5], 0.0);
+        }
+        w.kick_ball_for_test(vector![40.0, 0.0]);
+        let mut scored = false;
+        for _ in 0..300 {
+            w.step(&[ControlOutput::default(); 4]);
+            if w.score.0 == 1 {
+                scored = true;
+                break;
+            }
+        }
+        assert!(scored, "득점이 발생해야 함");
+        let s = w.snapshot();
+        assert_eq!(s.robots.len(), 4, "리셋 후에도 4대 유지");
+        assert!(s.robots[0].pos.x < 0.0, "리셋 후 Blue striker는 다시 왼쪽");
+        assert!(s.robots[2].pos.x > 0.0, "리셋 후 Red striker는 다시 오른쪽");
     }
 }

@@ -306,13 +306,16 @@ export function render(ctx: CanvasRenderingContext2D, s: GameState): void {
     const stunned = r.st?.includes("stun") ?? false;
 
     // 보행 위상 전진: 스냅샷 위치 변화로 순간속도 추정 → EMA 평활 → dt로 전진.
-    const g = gait.get(r.id) ?? { phase: 0, px: r.pos.x, py: r.pos.y, spd: 0 };
+    // 4대 로스터(KB-57): 팀당 2대라 r.id가 유일하지 않으므로 팀+프리셋으로 키잉
+    // (Blue-striker/Blue-guard/Red-striker/Red-guard는 서로 유일).
+    const gkey = `${r.id}:${r.robot ?? ""}`;
+    const g = gait.get(gkey) ?? { phase: 0, px: r.pos.x, py: r.pos.y, spd: 0 };
     const d = Math.hypot(r.pos.x - g.px, r.pos.y - g.py);
     const inst = dt > 0 ? d / dt : 0;
     g.spd += (inst - g.spd) * Math.min(1, dt * 8);
     g.px = r.pos.x; g.py = r.pos.y;
     g.phase += g.spd * dt * GAIT_FREQ;
-    gait.set(r.id, g);
+    gait.set(gkey, g);
 
     const cx = tx(r.pos.x), cy = ty(r.pos.y);
 

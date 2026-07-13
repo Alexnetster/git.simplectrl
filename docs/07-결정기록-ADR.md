@@ -153,3 +153,16 @@
   - **제외(YAGNI)**: 인바운드(업링크) 링크심·재연결/슬롯 유예·클라 예측/보정·대역폭 최적화 — 후속(Plan 7 잔여).
 - **근거**: 보간이 없으면 어떤 견고성 작업도 "덜덜거림"으로 묻히고, 링크심 토글이 없으면 넷코드 품질이 리뷰어 눈에 안 보인다. 이 셋을 묶어야 "지터 켜면 덜덜 → 보간 켜면 매끄럽고, 지연+드랍에도 플레이 가능"을 실제로 시연할 수 있다. 순수 전송 계층 분리로 결정적 코어를 지킨다.
 - **영향**: `server/src/net.rs`(연결별 링크심·`drain_due`·`parse_net_ctrl`), `client/src/net.ts`·`interp.ts`·`devpanel.ts`·`main.ts`·`index.html`. 프로토콜: `ping`/`pong`/`netsim` 추가([02](02-네트워크-프로토콜.md) §3). 게임 sim·`session::Uplink`는 불변(넷 제어는 net 계층 전용 파싱).
+
+## ADR-015 — 팀 로스터: 팀당 2대(공격형+방어형) + 협동 AI
+- **상태**: 확정 (KB-57). 배치·수치는 튜닝.
+- **맥락**: 1v1(2대)은 12×8 필드가 너무 넓고 밀기 위주가 됐다. 팀당 **공격형(striker)+방어형(guard)** 2대(총 4대)로 공간을 채우고 협동 플레이를 만든다. "모델 선택"은 **로스터 고정**으로 대체 — 경기 중 프리셋 교체(물리 바디 재생성)의 복잡도를 피한다.
+- **결정**:
+  - **고정 로스터 4대**: index 0=Blue striker(공격·사람 조종 가능), 1=Blue guard(수비·AI), 2=Red striker, 3=Red guard. `RobotState.id`는 팀값(2대 공유). 프리셋은 기존 `striker`/`guard` aggregate(속도차 내장: striker 최고속↑).
+  - **협동 = 역할 분담**(GameView/프로토콜 확장 없이): `ChaseBallAi`(공격)=공 추적+정렬 시 슛; `DefenderAi`(수비)=자기 골–공 직선 위, 자기 골에서 `DEFENDER_GUARD_DIST(2.5m)` 이내 지점을 지킴+클리어 슛. 목표가 근본적으로 달라 **공에 뭉치지 않는다.** 스턱탈출·슛(자책골 회피) 판정은 공용 자유함수로 공유.
+  - **친선 데미지 금지**: 같은 팀 충돌은 데미지/넉백/스턴 모두 차단(`teams[ra]!=teams[rb]`일 때만 적용).
+  - **사람은 팀 striker만 조종**(guard 항상 AI 동료). leave/AFK 시 striker는 공격 AI로 복귀.
+  - 2대 레거시 생성자(`new_kickoff_with`/`new_kickoff`)는 `#[cfg(test)]`로 보존(수많은 물리 테스트 불변). 실행은 신규 `new_match()`(4대). `reset_kickoff`는 저장된 `kickoff_layout`을 써 로봇 수 무관.
+- **근거**: 역할 분담만으로 협동을 얻어 GameView 확장·모델 선택의 복잡도를 회피(YAGNI). 로스터 고정이 외형(KB-56)·속도 비대칭을 자연히 살린다. 결정적 코어·리플레이 불변.
+- **영향**: `world.rs`(`MATCH_KICKOFF`), `physics.rs`(`teams`/`kickoff_layout`/`build`/`new_match`/친선필터), `control.rs`(`DefenderAi`+공용 함수), `main.rs`(4슬롯·팀→striker·일반화). 클라: `interp.ts`·render 보행 상태를 **인덱스 기반 매칭**(팀 id 비유일 대응), 배지는 striker 슬롯(Blue=0/Red=2). 스냅샷 robots/ctrl 길이 4, `check_goal`·팀 스코어 불변.
+- **후속**: 사람의 조종 로봇 전환·2대 모두 사람·모델 커스터마이징은 후속 슬라이스.

@@ -9,7 +9,9 @@ const scoreRedEl = document.getElementById("score-red");
 const clockEl = document.getElementById("clock-time");
 
 type Team = "blue" | "red";
-const SLOT_INDEX: Record<Team, number> = { blue: 0, red: 1 };
+// 4대 로스터(KB-57): 0=Blue striker, 1=Blue guard, 2=Red striker, 3=Red guard.
+// 사람이 조종 가능한 건 각 팀 striker뿐이라, 팀 참가 상태는 striker 슬롯으로 판단.
+const SLOT_INDEX: Record<Team, number> = { blue: 0, red: 2 };
 const TEAM_LABEL: Record<Team, string> = { blue: "Blue", red: "Red" };
 
 const ctrlBadgeEls: Record<Team, HTMLElement | null> = {
