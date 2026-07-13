@@ -6,7 +6,16 @@
     <title>Robot Soccer</title>
   </head>
   <body>
-    <canvas id="c" width="720" height="480" style="background:#111"></canvas>
+    <div style="position:relative; width:720px;">
+      <canvas id="c" width="720" height="480" style="background:#111"></canvas>
+      <div id="dev-panel" style="position:absolute; top:4px; right:4px; display:flex; flex-direction:column; gap:3px; padding:6px 8px; background:rgba(0,0,0,0.6); color:#fff; font:11px sans-serif; border-radius:4px;">
+        <label>Delay(ms) <input id="netsim-delay" type="number" min="0" step="10" value="0" style="width:56px"></label>
+        <label>Jitter(ms) <input id="netsim-jitter" type="number" min="0" step="10" value="0" style="width:56px"></label>
+        <label>Drop(%) <input id="netsim-drop" type="number" min="0" max="100" step="1" value="0" style="width:56px"></label>
+        <label><input id="interp-toggle" type="checkbox" checked /> 보간(interp)</label>
+        <span id="rtt-value">RTT: -- ms</span>
+      </div>
+    </div>
     <div>
       <button id="join-blue">BLUE로 참가</button>
       <button id="join-red">RED로 참가</button>

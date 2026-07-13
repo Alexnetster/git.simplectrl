@@ -16,7 +16,53 @@ export type Robot = {
 export type Ball = { pos: Vec2 };
 export type GameState = { robots: Robot[]; ball: Ball; score: [number, number]; time: number };
 
+/** 보간용 스냅샷 버퍼 항목. time=서버 sim초(다운링크 state.time). */
+export type Snapshot = { time: number; state: GameState };
+
 let socket: WebSocket | null = null;
+
+// ── 보간용 스냅샷 버퍼(Plan 7a) ───────────────────────────────────────
+// 오름차순(time) 유지, 길이 상한 도달 시 가장 오래된 것부터 제거.
+const MAX_BUFFER = 20;
+const buffer: Snapshot[] = [];
+
+function pushSnapshot(state: GameState): void {
+  buffer.push({ time: state.time, state });
+  // netsim(delay/jitter)으로 도착 순서가 뒤섞일 수 있어 time 기준 재정렬.
+  buffer.sort((a, b) => a.time - b.time);
+  while (buffer.length > MAX_BUFFER) buffer.shift();
+}
+
+/** 보간 모듈이 읽기 전용으로 참조하는 스냅샷 버퍼(오름차순). */
+export function getSnapshotBuffer(): readonly Snapshot[] {
+  return buffer;
+}
+
+// ── ping/RTT(Plan 7a) ────────────────────────────────────────────────
+let nextPingId = 1;
+const pingSentAt = new Map<number, number>();
+let rtt: number | null = null;
+
+function now(): number {
+  return typeof performance !== "undefined" ? performance.now() : Date.now();
+}
+
+/** {t:"ping",id} 송신 + 송신시각 기록(RTT 계산용). */
+export function sendPing(): void {
+  const id = nextPingId++;
+  pingSentAt.set(id, now());
+  send({ t: "ping", id });
+}
+
+/** 최근 계산된 RTT(ms). pong을 아직 못 받았으면 null. */
+export function getRtt(): number | null {
+  return rtt;
+}
+
+/** 개발 패널에서 netsim 파라미터 변경 시 서버로 송신. */
+export function sendNetsim(delay_ms: number, jitter_ms: number, drop_pct: number): void {
+  send({ t: "netsim", delay_ms, jitter_ms, drop_pct });
+}
 
 export function connect(onState: (s: GameState) => void): void {
   // 127.0.0.1 고정: 이 머신에서 `localhost`는 IPv6(::1)로 다른 서비스에 갈 수 있어
@@ -28,11 +74,22 @@ export function connect(onState: (s: GameState) => void): void {
   ws.onclose = (e) => console.warn("[ws] closed", e.code, e.reason);
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
-    if (msg.t === "state") onState(msg.state as GameState);
+    if (msg.t === "state") {
+      const state = msg.state as GameState;
+      pushSnapshot(state);
+      onState(state);
+    } else if (msg.t === "pong") {
+      const id = msg.id as number;
+      const sentAt = pingSentAt.get(id);
+      if (sentAt !== undefined) {
+        rtt = now() - sentAt;
+        pingSentAt.delete(id);
+      }
+    }
   };
 }
 
-/** 업링크 송신(join/input/leave 등). 연결이 열려있지 않으면 조용히 무시. */
+/** 업링크 송신(join/input/leave/ping/netsim 등). 연결이 열려있지 않으면 조용히 무시. */
 export function send(msg: Record<string, unknown>): void {
   if (socket && socket.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify(msg));
