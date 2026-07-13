@@ -1285,4 +1285,53 @@ mod tests {
         let v = w.snapshot().ball.vel;
         assert!(speed(v) < 1e-6, "스턴 중엔 킥이 무동작이어야 함 (got {v:?})");
     }
+
+    #[test]
+    fn kick_blocked_when_broken() {
+        let mut w = kick_test_world(2.0);
+        w.force_break_for_test(0); // 파손 다운
+        w.step(&kick_input(0.0, 0.0));
+        let v = w.snapshot().ball.vel;
+        assert!(speed(v) < 1e-6, "파손 다운 중엔 킥이 무동작이어야 함 (got {v:?})");
+    }
+
+    #[test]
+    fn kick_ignored_when_ball_behind_cone() {
+        let mut w = kick_test_world(2.0);
+        // 사거리 안(0.5m)이지만 로봇 뒤쪽(정면 +x의 반대) → 정면 콘 밖이라 무동작.
+        w.set_ball_for_test(vector![-0.5, 0.0], vector![0.0, 0.0]);
+        w.step(&kick_input(0.0, 0.0));
+        let v = w.snapshot().ball.vel;
+        assert!(speed(v) < 1e-6, "정면 콘 밖(뒤쪽)이면 킥 무동작이어야 함 (got {v:?})");
+    }
+
+    #[test]
+    fn kick_cooldown_blocks_immediate_repress() {
+        let mut w = kick_test_world(2.0);
+        // 1) 발사(상승엣지).
+        w.step(&kick_input(0.0, 0.0));
+        assert!(speed(w.snapshot().ball.vel) > 0.0, "1회차는 발사되어야 함");
+        // 2) 릴리스(kick:false)로 엣지 리셋 — 쿨다운은 아직 잔여(0.45s ≫ 1스텝).
+        w.set_ball_for_test(vector![0.5, 0.0], vector![0.0, 0.0]);
+        w.step(&[ControlOutput::default(), ControlOutput::default()]);
+        // 3) 즉시 재-press(새 상승엣지)지만 쿨다운 중이라 막혀야 함.
+        w.set_ball_for_test(vector![0.5, 0.0], vector![0.0, 0.0]);
+        w.step(&kick_input(0.0, 0.0));
+        let v = w.snapshot().ball.vel;
+        assert!(
+            speed(v) < 1e-6,
+            "쿨다운 중 재-press는 막혀야 함(shoot_lock) (got {v:?})"
+        );
+    }
+
+    #[test]
+    fn shoot_lock_appears_in_snapshot_after_kick() {
+        let mut w = kick_test_world(2.0);
+        w.step(&kick_input(0.0, 0.0));
+        let st = &w.snapshot().robots[0].st;
+        assert!(
+            st.iter().any(|s| s == "shoot_lock"),
+            "발사 직후 쿨다운 동안 st에 shoot_lock이 노출되어야 함 (got {st:?})"
+        );
+    }
 }
