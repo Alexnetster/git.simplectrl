@@ -126,9 +126,10 @@ pub fn catalog() -> Catalog {
             // 스태미나 용량/회복(몸통이 주 기여, KB-45). 3초분, ~4초에 완전 회복.
             stamina_max: 3.0,
             stamina_regen: 0.75,
-            // 차기 세기(KB-48 실배선). guard는 몸통이 무겁고 안정형이라 striker보다
-            // 약간 낮게(짧은 패스 수준). 플레이테스트 튜닝 대상.
-            kick_power: 9.0,
+            // 차기 세기(KB-58 재조정): 임펄스=level×kick_power. 공 질량(~0.13kg) 대비
+            // 이전 값(9)은 수십 m/s로 공을 쏴 벽 터널링·세기 무의미를 유발했다.
+            // 강킥이 공 속도 상한(BALL_MAX_SPEED≈12) 근처가 되도록 축소. guard는 약간 낮게.
+            kick_power: 1.05,
             ..Default::default()
         },
     );
@@ -144,9 +145,9 @@ pub fn catalog() -> Catalog {
             // 가벼운 몸통은 스태미나 용량은 약간 적지만 회복은 더 빠름.
             stamina_max: 2.5,
             stamina_regen: 0.85,
-            // 차기 세기(KB-48 실배선). striker는 민첩형이라 강킥(필드를 가로지를 만큼).
-            // 플레이테스트 튜닝 대상.
-            kick_power: 12.0,
+            // 차기 세기(KB-58 재조정). striker는 강킥(강=속도 상한 근처). level×kick_power가
+            // 임펄스라 공 질량 대비 과대하면 터널링. 강 1.0×1.4≈상한, 약 0.5×1.4는 그 절반.
+            kick_power: 1.4,
             ..Default::default()
         },
     );

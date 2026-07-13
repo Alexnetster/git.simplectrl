@@ -7,6 +7,9 @@ use std::collections::HashMap;
 
 const WALL_T: f32 = 0.2; // 벽 두께
 const BALL_R: f32 = 0.2;
+/// 공 속도 상한(m/s, KB-58). 킥/밀기/넉백 합산 과속으로 인한 벽 터널링·이탈 방지.
+/// 강킥이 이 근처가 되도록 kick_power를 맞춤(세기 gradient는 이 아래에서 유지).
+const BALL_MAX_SPEED: f32 = 12.0;
 const RESTITUTION: f32 = 0.85;
 
 /// 충돌 그룹(KB-43): 골 입구는 공만 통과시키고 로봇은 막는 "펜스"가 필요해
@@ -238,11 +241,13 @@ impl PhysicsWorld {
             }
         }
 
-        // 공 (동적)
+        // 공 (동적). CCD 활성(KB-58): 강킥 시 한 스텝 이동량이 벽 두께를 넘어 터널링하는
+        // 것을 rapier 연속충돌검출로 방지.
         let ball = bodies.insert(
             RigidBodyBuilder::dynamic()
                 .translation(vector![0.0, 0.0])
                 .linear_damping(0.4)
+                .ccd_enabled(true)
                 .build(),
         );
         // BALL: SOLID(벽) + ROBOT(드리블)과는 충돌하되 GOALFENCE는 무시(골 입구 통과).
@@ -449,6 +454,9 @@ impl PhysicsWorld {
     pub fn step(&mut self, controls: &[ControlOutput]) {
         self.apply_controls(controls);
         self.apply_kicks(controls);
+        // 공 속도 상한(KB-58): 킥/밀기/넉백으로 공이 과속하면 벽 터널링·필드 이탈 유발.
+        // 적분(pipeline.step) 전에 캡을 걸어야 한 스텝 이동량이 제한됨.
+        self.clamp_ball_speed();
         // 충돌 이벤트 채널: collision + (미사용) contact-force 둘 다 필요(rapier 재수출).
         let (cs, cr) = rapier2d::crossbeam::channel::unbounded();
         let (fs, _fr) = rapier2d::crossbeam::channel::unbounded();
@@ -561,9 +569,29 @@ impl PhysicsWorld {
         (d.x * d.x + d.y * d.y).sqrt()
     }
 
+    /// 공 속도를 BALL_MAX_SPEED로 클램프(KB-58). 적분 전에 호출해 터널링 방지.
+    fn clamp_ball_speed(&mut self) {
+        let b = &mut self.bodies[self.ball];
+        let v = *b.linvel();
+        let sp = (v.x * v.x + v.y * v.y).sqrt();
+        if sp > BALL_MAX_SPEED && sp > 0.0 {
+            let k = BALL_MAX_SPEED / sp;
+            b.set_linvel(vector![v.x * k, v.y * k], true);
+        }
+    }
+
+    /// 공을 중앙으로 복귀(속도 0). 득점/이탈 안전망 공용.
+    fn recenter_ball(&mut self) {
+        let b = &mut self.bodies[self.ball];
+        b.set_translation(vector![0.0, 0.0], true);
+        b.set_linvel(vector![0.0, 0.0], true);
+        b.set_angvel(0.0, true);
+    }
+
     fn check_goal(&mut self) {
         let bp = *self.bodies[self.ball].translation();
         let half_w = FIELD_W / 2.0;
+        let half_h = FIELD_H / 2.0;
         let in_mouth = bp.y.abs() <= GOAL_W / 2.0;
         if bp.x > half_w && in_mouth {
             self.score.0 += 1;
@@ -571,6 +599,10 @@ impl PhysicsWorld {
         } else if bp.x < -half_w && in_mouth {
             self.score.1 += 1;
             self.reset_kickoff();
+        } else if bp.x.abs() > half_w + 1.0 || bp.y.abs() > half_h + 0.5 {
+            // 안전망(KB-58): 골이 아닌데 공이 필드를 벗어남(터널링/이탈) → 득점 없이
+            // 중앙 복귀. 공이 화면 밖으로 사라지고 AI가 그걸 쫓아 흩어지는 것을 막는다.
+            self.recenter_ball();
         }
     }
 

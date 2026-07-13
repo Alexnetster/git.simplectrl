@@ -52,4 +52,40 @@ mod tests {
         } // 5초
         assert!(ball_moved, "AI가 공을 밀면 공이 움직여야 함");
     }
+
+    /// 재현 테스트(KB-58 조사): 실제 4대 로스터 + 협동 AI를 30초 돌려 공/로봇 좌표가
+    /// NaN·무한대가 되거나 필드를 벗어나지 않는지 확인. "공이 안 보이고 로봇이 따로
+    /// 논다"는 증상이 공 좌표 오염(NaN/탈출)에서 오는지 데이터로 판별.
+    #[test]
+    fn match_ai_keeps_ball_and_robots_on_field() {
+        use crate::control::DefenderAi;
+        let mut w = PhysicsWorld::new_match();
+        let mut ctrls: Vec<Box<dyn Controller>> = vec![
+            Box::new(ChaseBallAi::default()),
+            Box::new(DefenderAi::default()),
+            Box::new(ChaseBallAi::default()),
+            Box::new(DefenderAi::default()),
+        ];
+        for i in 0..1800 {
+            tick(&mut w, &mut ctrls);
+            let s = w.snapshot();
+            assert!(
+                s.ball.pos.x.is_finite() && s.ball.pos.y.is_finite(),
+                "tick {i}: 공 좌표 NaN/inf = {:?}",
+                s.ball.pos
+            );
+            assert!(
+                s.ball.pos.x.abs() <= FIELD_W && s.ball.pos.y.abs() <= FIELD_H,
+                "tick {i}: 공이 필드를 벗어남 = {:?}",
+                s.ball.pos
+            );
+            for (ri, r) in s.robots.iter().enumerate() {
+                assert!(
+                    r.pos.x.is_finite() && r.pos.y.is_finite(),
+                    "tick {i}: 로봇 {ri} 좌표 NaN = {:?}",
+                    r.pos
+                );
+            }
+        }
+    }
 }

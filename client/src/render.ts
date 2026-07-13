@@ -383,8 +383,17 @@ export function render(ctx: CanvasRenderingContext2D, s: GameState): void {
     ctx.fillStyle = rgba("#ffffff", a);
     ctx.beginPath(); ctx.arc(p.x, p.y, rr, 0, Math.PI * 2); ctx.fill();
   }
+  // 공: 난전에서도 확실히 보이도록 글로우 + 앰버 외곽 링 + 흰 코어.
+  ctx.save();
+  ctx.shadowColor = "#fff";
+  ctx.shadowBlur = 12;
   ctx.fillStyle = "#fff";
-  ctx.beginPath(); ctx.arc(bx, by, 7, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(bx, by, 8.5, 0, Math.PI * 2); ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = COL.amber;
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(bx, by, 11, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
 
   // 인캔버스 스코어/시간 없음 — 크롬 HUD(hud.ts)에서 담당.
 }
