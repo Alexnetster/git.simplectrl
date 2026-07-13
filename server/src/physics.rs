@@ -135,6 +135,31 @@ impl PhysicsWorld {
             }
         }
 
+        // 코너 챔퍼(KB-44): 직각(90°) 코너에 공이 끼어 로봇이 빼낼 수 없는 교착을
+        // 막기 위해 4개 코너마다 45° 대각 벽을 추가해 팔각형에 가까운 필드로 만든다.
+        // SOLID 그룹(벽과 동일)이라 공과 로봇 모두 튕겨나간다.
+        // 골 입구는 좌우 벽 중앙(|y| ≤ GOAL_W/2 ≈ 1.2)이라 hh(4.0) 근처인 코너와는
+        // 충분히 떨어져 있어 골문에는 영향이 없다.
+        let chamfer = 1.0; // 각 벽을 따라 잘라내는 길이(대각선 폭이 아님). 0.8~1.2m 권장 범위 내.
+        let chamfer_half_len = chamfer * std::f32::consts::SQRT_2 / 2.0;
+        for sx in [1.0f32, -1.0] {
+            for sy in [1.0f32, -1.0] {
+                let cx = sx * (hw - chamfer / 2.0);
+                let cy = sy * (hh - chamfer / 2.0);
+                // 사각형은 180° 회전 대칭이라 부호(sx*sy)만으로 네 코너 모두의
+                // 대각 방향(±45°)을 얻을 수 있다.
+                let angle = -sx * sy * std::f32::consts::FRAC_PI_4;
+                colliders.insert(
+                    ColliderBuilder::cuboid(chamfer_half_len, WALL_T)
+                        .translation(vector![cx, cy])
+                        .rotation(angle)
+                        .restitution(RESTITUTION)
+                        .collision_groups(solid_groups)
+                        .build(),
+                );
+            }
+        }
+
         // 공 (동적)
         let ball = bodies.insert(
             RigidBodyBuilder::dynamic()
@@ -934,6 +959,47 @@ mod tests {
         assert!(
             max_x <= FIELD_W / 2.0 + 0.5,
             "로봇은 골 입구 펜스에 막혀 필드 밖으로 나가면 안 됨 (got x={max_x})"
+        );
+    }
+
+    #[test]
+    fn ball_escapes_corner() {
+        // KB-44: 필드 모서리(90도 직각)에 공이 끼어 로봇이 빼낼 수 없는 교착을 막기 위해
+        // 각 모서리에 45도 챔퍼(대각 벽)를 추가한다.
+        //
+        // 판별 기준: 챔퍼가 없으면(기존 직각 벽 두 장만 있으면) 공이 안정적으로 정지할
+        // 수 있는 "가장 깊은 코너 안착점"은 두 벽 두께(WALL_T)+공 반지름(BALL_R)만큼
+        // 안쪽인 (hw-WALL_T-BALL_R, hh-WALL_T-BALL_R) 부근이며, apex(hw,hh)로부터의
+        // 거리는 약 0.57에 불과하다(코너에 사실상 박힘). 챔퍼를 추가하면 그 안착점이
+        // 통째로 사라지고 대각면에 훨씬 못 미쳐 멈추므로 apex로부터의 거리가 뚜렷하게
+        // (>1.0) 커진다. 이 임계값(1.0)은 "박힘(≈0.57)"과 "챔퍼로 밀려남(≈1.8, 계산상)"
+        // 사이를 확실히 가르도록 선택했다(단순 반사/디플렉션이 아니라 최종 안착 위치로 검증).
+        let hw = FIELD_W / 2.0;
+        let hh = FIELD_H / 2.0;
+        let mut w = PhysicsWorld::new_kickoff();
+        // 로봇들을 코너와 무관한 곳으로 치워 간섭 배제
+        w.set_robot_for_test(0, vector![0.0, -3.5], 0.0);
+        w.set_robot_for_test(1, vector![0.0, 3.5], std::f32::consts::PI);
+        // 공을 우상단 코너를 향해 굴려보내 감쇠(linear_damping)로 자연히 정착하게 한다.
+        let start = vector![hw - 1.0, hh - 1.0];
+        w.set_ball_for_test(start, vector![0.3, 0.3]);
+        // apex(꼭짓점)까지의 유클리드 거리
+        let dist_to_apex = |x: f32, y: f32| ((x - hw).powi(2) + (y - hh).powi(2)).sqrt();
+        for _ in 0..300 {
+            w.step(&[ControlOutput::default(); 2]);
+        }
+        let end = w.snapshot().ball.pos;
+        let end_dist = dist_to_apex(end.x, end.y);
+        // 공이 챔퍼/벽을 뚫고 필드 밖으로 나가면 안 됨(여유 포함 경계 안).
+        assert!(
+            end.x.abs() <= hw + 0.5 && end.y.abs() <= hh + 0.5,
+            "공이 챔퍼/벽을 뚫고 필드 밖으로 나가면 안 됨 (got {end:?})"
+        );
+        // 챔퍼가 코너 안착점을 없애 apex로부터 확실히 멀어진 곳에서 멈춰야 함.
+        assert!(
+            end_dist > 1.0,
+            "챔퍼가 있으면 코너 apex 근접 안착이 불가능해야 함 \
+             (end={end:?}, end_dist={end_dist}, 임계값 1.0 — 챔퍼 없는 안착점은 ≈0.57)"
         );
     }
 
