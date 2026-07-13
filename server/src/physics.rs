@@ -193,7 +193,9 @@ impl PhysicsWorld {
                 RigidBodyBuilder::dynamic()
                     .translation(vector![x, 0.0])
                     .rotation(rot)
-                    .linear_damping(2.0)
+                    // 조작감 튜닝(1차): 2.0→2.6. 재방향 시 잔여 미끄럼을 더 빨리 죽여
+                    // "회전-후-전진"이 덜 미끄럽게. 너무 높이면 관성이 사라져 뻣뻣해짐.
+                    .linear_damping(2.6)
                     // 회전은 apply_controls에서 set_angvel(rate 제어)로 매 스텝 덮어써
                     // angular_damping 효과는 사실상 미미 (조작감 튜닝 여지로만 유지).
                     .angular_damping(4.0)

@@ -176,7 +176,9 @@ pub fn catalog() -> Catalog {
         "neck-std",
         Slot::Neck,
         StatSet {
-            turn_rate: 3.0,
+            // 조준 속도(조작감 튜닝, 플레이테스트 1차): 3.0(≈172°/s, 굼뜸) → 6.0(≈344°/s).
+            // 전차식 제어(회전 후 전진)에서 방향 전환 답답함의 주 원인이 낮은 회전율.
+            turn_rate: 6.0,
             ..Default::default()
         },
     );
