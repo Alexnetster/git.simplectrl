@@ -245,4 +245,21 @@ mod tests {
         // 프리셋이 서로 다르다(비대칭)
         assert!(striker.max_speed != guard.max_speed || striker.accel != guard.accel);
     }
+
+    /// 스프린트는 걷기보다 빨라야 유의미(KB-45). 출하 프리셋 전부에서 불변식 보장:
+    /// sprint_speed > max_speed. (미래 파츠가 max만 올리고 sprint를 안 올리면 스프린트가
+    /// 순수 열화—느리면서 스태미나만 소모—가 되는 회귀를 여기서 잡는다.)
+    #[test]
+    fn shipped_presets_sprint_faster_than_walk() {
+        let cat = catalog();
+        for preset in ["striker", "guard"] {
+            let s = aggregate(&cat, preset);
+            assert!(
+                s.sprint_speed > s.max_speed,
+                "{preset}: sprint_speed {} must exceed max_speed {}",
+                s.sprint_speed,
+                s.max_speed
+            );
+        }
+    }
 }

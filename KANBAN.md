@@ -49,6 +49,11 @@ _(비어 있음 — Plan 3b 착수 시 채움)_
 _(비어 있음)_
 
 ## Done
+**플레이테스트 후속 — 필드/체력 ✅** (branch `feat/interactivity`)
+- [x] KB-43 골 입구 펜스(GOALFENCE 충돌그룹): 로봇은 막히고 공은 통과
+- [x] KB-44 코너 45° 챔퍼: 공이 구석에 끼는 문제 완화
+- [x] KB-45 스태미나/스프린트 — 걷기 상시·달리기(Shift)는 stamina>0에서만, 0이면 걷기로 폴백·재생 (테스트: cargo test 48/48, debug+release warning 0, 순수/결정성 유지, 프리셋 sprint>walk 불변식 가드, 클라 스태미나바) *(오버히트·AI스프린트 제외 = YAGNI)*
+
 **Plan 4a — 사람 조작 최소 슬라이스 ✅** (branch `feat/interactivity`)
 - [x] KB-36 HumanController(최근 입력 보유)
 - [x] KB-37 업링크 파싱(join/input/leave, serde_json::Value)
