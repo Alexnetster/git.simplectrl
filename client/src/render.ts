@@ -246,11 +246,45 @@ export function render(ctx: CanvasRenderingContext2D, s: GameState): void {
     ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(width, gy); ctx.stroke();
   }
 
-  // 외곽 라운드 라인 + 중앙선 + 센터서클
+  // 필드 경계 = 팔각형(코너 챔퍼 반영, KB-54). 서버 챔퍼(1m)로 잘린 4코너를 '벽'으로
+  // 채워 "여기는 더 못 들어감"을 눈에 보이게 표시(충돌 지오메트리와 화면 일치).
+  {
+    const CH = 1.0, hw = FIELD_W / 2, hh = FIELD_H / 2;
+    const cxx = hw - CH, cyy = hh - CH;
+    const oct: [number, number][] = [
+      [-cxx, hh], [cxx, hh], [hw, cyy], [hw, -cyy],
+      [cxx, -hh], [-cxx, -hh], [-hw, -cyy], [-hw, cyy],
+    ];
+    const corners: [number, number][][] = [
+      [[cxx, hh], [hw, hh], [hw, cyy]],
+      [[-cxx, hh], [-hw, hh], [-hw, cyy]],
+      [[cxx, -hh], [hw, -hh], [hw, -cyy]],
+      [[-cxx, -hh], [-hw, -hh], [-hw, -cyy]],
+    ];
+    // 잘린 코너 삼각형 = 벽(슬레이트 채움).
+    ctx.fillStyle = rgba(COL.line, 0.38);
+    for (const tri of corners) {
+      ctx.beginPath();
+      ctx.moveTo(tx(tri[0][0]), ty(tri[0][1]));
+      ctx.lineTo(tx(tri[1][0]), ty(tri[1][1]));
+      ctx.lineTo(tx(tri[2][0]), ty(tri[2][1]));
+      ctx.closePath();
+      ctx.fill();
+    }
+    // 팔각 경계선(챔퍼 대각선이 곧 no-go 벽면).
+    ctx.strokeStyle = COL.line;
+    ctx.lineWidth = Math.max(1, 2 * k);
+    ctx.beginPath();
+    oct.forEach(([x, y], idx) => {
+      const px = tx(x), py = ty(y);
+      if (idx === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    });
+    ctx.closePath();
+    ctx.stroke();
+  }
+  // 중앙선 + 센터서클
   ctx.strokeStyle = COL.line;
   ctx.lineWidth = Math.max(1, 2 * k);
-  roundRectPath(ctx, 16 * k, 16 * k, width - 32 * k, height - 32 * k, 10 * k);
-  ctx.stroke();
   ctx.beginPath(); ctx.moveTo(width / 2, 16 * k); ctx.lineTo(width / 2, height - 16 * k); ctx.stroke();
   ctx.beginPath(); ctx.arc(width / 2, height / 2, 92 * k, 0, Math.PI * 2); ctx.stroke();
   ctx.fillStyle = COL.line;
