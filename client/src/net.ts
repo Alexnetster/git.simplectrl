@@ -14,7 +14,14 @@ export type Robot = {
   stamina?: number;
 };
 export type Ball = { pos: Vec2 };
-export type GameState = { robots: Robot[]; ball: Ball; score: [number, number]; time: number };
+/** 슬롯별 조종 주체(KB-55): index 0=Blue, 1=Red, 값 "human"|"ai". */
+export type GameState = {
+  robots: Robot[];
+  ball: Ball;
+  score: [number, number];
+  time: number;
+  ctrl?: string[];
+};
 
 /** 보간용 스냅샷 버퍼 항목. time=서버 sim초(다운링크 state.time). */
 export type Snapshot = { time: number; state: GameState };
@@ -94,4 +101,18 @@ export function send(msg: Record<string, unknown>): void {
   if (socket && socket.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify(msg));
   }
+}
+
+// ── 내 슬롯 낙관적 추적(KB-55) ────────────────────────────────────────
+// 세션 식별자를 두지 않는 대신(YAGNI), 클라가 자기 join/leave를 낙관적으로
+// 기억하고 매 스냅샷의 ctrl로 재조정한다(hud.ts). 데모 스코프: 로컬/소수
+// 플레이어 가정, 다중 탭 등은 한계로 허용.
+let mySlot: "blue" | "red" | null = null;
+
+export function getMySlot(): "blue" | "red" | null {
+  return mySlot;
+}
+
+export function setMySlot(slot: "blue" | "red" | null): void {
+  mySlot = slot;
 }

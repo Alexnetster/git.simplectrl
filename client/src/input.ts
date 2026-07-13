@@ -1,4 +1,4 @@
-import { send } from "./net";
+import { getMySlot, send, setMySlot } from "./net";
 
 /** 현재 눌린 키 상태. (01-UX §3: ↑↓ 이동, ←→ 회전, Space=차기(KB-48) — 모드리스 탭) */
 const keys = { up: false, down: false, left: false, right: false, shift: false, space: false };
@@ -69,12 +69,21 @@ export function initInput(): void {
   window.addEventListener("keyup", (e) => handleKey(e, false));
 }
 
-/** [BLUE로 참가]/[RED로 참가] 버튼 → join 업링크. */
+/** 참가 버튼 클릭 → 토글(KB-55): 내 팀이면 leave, 다른 팀/미참가면 join. */
+function bindJoinButton(btnId: string, slot: "blue" | "red"): void {
+  document.getElementById(btnId)?.addEventListener("click", () => {
+    if (getMySlot() === slot) {
+      send({ t: "leave" });
+      setMySlot(null);
+    } else {
+      send({ t: "join", slot });
+      setMySlot(slot);
+    }
+  });
+}
+
+/** [BLUE]/[RED] 참가 버튼 배선: 토글(참가/전환/나가기). */
 export function initJoinButtons(blueBtnId: string, redBtnId: string): void {
-  document.getElementById(blueBtnId)?.addEventListener("click", () => {
-    send({ t: "join", slot: "blue" });
-  });
-  document.getElementById(redBtnId)?.addEventListener("click", () => {
-    send({ t: "join", slot: "red" });
-  });
+  bindJoinButton(blueBtnId, "blue");
+  bindJoinButton(redBtnId, "red");
 }

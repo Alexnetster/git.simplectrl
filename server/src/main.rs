@@ -48,8 +48,7 @@ impl SlotControllers {
         self.owner.iter().position(|o| *o == Some(sid))
     }
 
-    /// 테스트/향후 다운링크(누가 사람인지 표시)용 조회 헬퍼.
-    #[allow(dead_code)]
+    /// 다운링크(스냅샷 `ctrl`)·AFK 판정·테스트용 조회 헬퍼.
     fn is_human(&self, i: usize) -> bool {
         self.owner[i].is_some()
     }
@@ -97,6 +96,10 @@ impl SlotControllers {
     }
 }
 
+/// 사람 점유 슬롯에 이만큼 Input이 없으면 자동 Leave(AI 인계, KB-55).
+/// 튜닝 여지: 데모 스코프 기본값(30s). 필요 시 조정.
+const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+
 #[tokio::main]
 async fn main() {
     let (tx, rx) = watch::channel(GameState::new_kickoff());
@@ -119,13 +122,28 @@ async fn main() {
         let mut ticker = interval(Duration::from_millis(8)); // ~120Hz 프레임
         let mut last = Instant::now();
         let mut since_pub: u32 = 0;
+        // AFK 자동 해제(KB-55): 슬롯별 마지막 활동(join/input) 시각.
+        let mut last_input = [Instant::now(); 2];
         loop {
             ticker.tick().await;
             // 업링크 논블로킹 드레인 → 슬롯 컨트롤러(AI↔사람) 반영.
             while let Ok((sid, u)) = uplink_rx.try_recv() {
                 slots.apply(u, sid);
+                // join(성공 시)/input 모두 "활동"으로 간주해 해당 슬롯 타이머 리셋.
+                // leave나 거부된 join은 owner_slot(sid)가 None이라 자연히 no-op.
+                if let Some(i) = slots.owner_slot(sid) {
+                    last_input[i] = Instant::now();
+                }
             }
             let now = Instant::now();
+            // AFK 타이머: 사람 점유 슬롯이 IDLE_TIMEOUT 동안 무입력이면 강제 leave.
+            for i in 0..2 {
+                if slots.is_human(i) && now.duration_since(last_input[i]) > IDLE_TIMEOUT {
+                    if let Some(sid) = slots.owner[i] {
+                        slots.apply(Uplink::Leave, sid);
+                    }
+                }
+            }
             let elapsed = now.duration_since(last).as_secs_f32();
             last = now;
             let steps = acc.feed(elapsed);
@@ -135,7 +153,15 @@ async fn main() {
             }
             if since_pub >= 2 {
                 since_pub = 0;
-                let _ = tx.send(world.snapshot()); // ~30Hz
+                let mut snap = world.snapshot();
+                // 물리 레이어는 소유자를 모르므로 항상 "ai"를 채운다; 사람 점유
+                // 슬롯만 여기서 "human"으로 덮어써 다운링크에 반영(KB-55).
+                for i in 0..2 {
+                    if slots.is_human(i) {
+                        snap.ctrl[i] = "human".to_string();
+                    }
+                }
+                let _ = tx.send(snap); // ~30Hz
             }
         }
     });

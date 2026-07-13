@@ -48,6 +48,7 @@ function interpolateState(s0: GameState, s1: GameState, alphaRaw: number): GameS
     ball: { pos: { x: lerp(s0.ball.pos.x, s1.ball.pos.x, t), y: lerp(s0.ball.pos.y, s1.ball.pos.y, t) } },
     score: s1.score,
     time: s1.time,
+    ctrl: s1.ctrl, // 이산 필드: 최신 스냅샷 값 그대로(보간 대상 아님).
   };
 }
 

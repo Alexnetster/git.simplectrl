@@ -59,6 +59,10 @@ pub struct GameState {
     pub ball: BallState,
     pub score: (u32, u32),
     pub time: f32,
+    /// 슬롯별 조종 주체(KB-55): "human"|"ai". 로봇 수와 동일 길이,
+    /// 인덱스 0=Blue, 1=Red. physics는 소유자를 모르므로 항상 "ai"를 채우고,
+    /// sim 루프가 브로드캐스트 직전 사람 점유 슬롯을 "human"으로 덮어쓴다.
+    pub ctrl: Vec<String>,
 }
 
 /// 컨트롤러가 보는 읽기 전용 뷰
@@ -81,7 +85,7 @@ pub struct ControlOutput {
 
 impl GameState {
     pub fn new_kickoff() -> Self {
-        let robots = KICKOFF
+        let robots: Vec<RobotState> = KICKOFF
             .iter()
             .enumerate()
             .map(|(i, &(x, rot))| RobotState {
@@ -96,6 +100,7 @@ impl GameState {
                 stamina: 1.0,
             })
             .collect();
+        let ctrl = vec!["ai".to_string(); robots.len()];
         GameState {
             robots,
             ball: BallState {
@@ -104,6 +109,7 @@ impl GameState {
             },
             score: (0, 0),
             time: 0.0,
+            ctrl,
         }
     }
 }

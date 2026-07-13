@@ -58,6 +58,18 @@ body { font-family: var(--sans); }
 .team .name { font: 600 12px/1 var(--sans); letter-spacing: .18em; text-transform: uppercase; color: var(--dim); }
 .team.blue .name { color: #bcd8ff; }
 .team.red .name { color: #ffc4cb; }
+
+/* 참가 상태 배지(KB-55): AI(dim) / 사람(중립) / YOU(액센트, 내 슬롯). */
+.ctrl-badge {
+  font: 650 9px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase;
+  padding: 3px 7px; border-radius: 999px; border: 1px solid var(--border);
+  color: var(--mute); background: var(--panel-2);
+}
+.ctrl-badge.is-human { color: var(--text); border-color: rgba(230,233,239,.25); }
+.ctrl-badge.is-you {
+  color: #08131f; background: var(--amber); border-color: var(--amber);
+  box-shadow: 0 0 10px rgba(255,176,32,.5);
+}
 .score { display: flex; align-items: center; gap: 14px; font: 700 34px/1 var(--mono); font-variant-numeric: tabular-nums; }
 .score .s.b { color: var(--blue); }
 .score .s.r { color: var(--red); }
@@ -168,6 +180,8 @@ input[type="range"].range-input::-moz-range-track {
 .btn:hover { background: var(--panel-2); }
 .btn.blue:hover { box-shadow: 0 0 0 1px rgba(58,160,255,.5), 0 0 22px rgba(58,160,255,.18); }
 .btn.red:hover { box-shadow: 0 0 0 1px rgba(255,90,106,.5), 0 0 22px rgba(255,90,106,.18); }
+/* 내가 참가 중인 팀(KB-55): 토글 버튼이 "나가기"로 바뀔 때 강조. */
+.btn.mine { border-color: var(--amber); box-shadow: 0 0 0 1px rgba(255,176,32,.5), 0 0 18px rgba(255,176,32,.2); }
 
 .note { font: 400 11.5px/1.5 var(--sans); color: var(--mute); text-align: center; margin: 0; }
 .note b { color: var(--dim); font-weight: 600; }
