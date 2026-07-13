@@ -104,6 +104,7 @@
   - **걷기(`max_speed`)는 상시** 가능. **스프린트(`sprint_speed`, Shift 홀드=`input.run`)는 `stamina>0`에서만**, `apply_controls`에서 게이팅하고 `stamina==0`이면 클라가 `run:true`를 계속 보내도 걷기 속도로 자동 폴백.
   - 스프린트 중 소모 / 아닐 때 재생. `StaminaState`는 **순수 `f32`**(결정성).
   - **제외(YAGNI)**: 오버히트 감속 페널티·AI 스프린트·복잡한 재생 구분.
+- **구현 addendum (KB-53)**: 회복 정책을 명확화 — 스프린트=소모, **걷기(이동 입력 thrust≠0)=유지(회복 안 함)**, **가만히 있을 때(이동 입력 없음)만 회복**. (기존엔 스프린트만 아니면 걸으며도 회복 → "쉬면 회복" 감이 없었음. 회전만 하는 것은 이동으로 치지 않음.)
 - **근거**: 결정적·순수 유지([ADR-007])로 리플레이 보존. 최소 슬라이스로 "실시간 제어에 자원 관리 한 축"을 시연, 나머지는 부채로 미룸.
 - **영향**: `parts.rs`의 `StatSet` +`sprint_speed`/`stamina_max`/`stamina_regen`; 신규 `stamina.rs`; `physics.rs`(게이팅/스냅샷); `world.rs`의 `ControlOutput.run`·`RobotState.stamina`; `session.rs`(run 파싱); [02-네트워크-프로토콜](02-네트워크-프로토콜.md)은 이미 `input.run`+스냅샷 `stamina:0~1` 서술이 있어 정합(무변경). 클라 스태미나바(`render.ts`).
 

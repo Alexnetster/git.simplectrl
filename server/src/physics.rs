@@ -306,11 +306,14 @@ impl PhysicsWorld {
             }
             let st = &self.stats[i];
             // 달리기(KB-45): run 요청 + 스태미나 잔량이 있을 때만 sprint_speed 적용,
-            // 소모. 스태미나 0이면 자동으로 walk(max_speed)로 폴백. 걷는 동안은 회복.
+            // 소모. 스태미나 0이면 자동으로 walk(max_speed)로 폴백.
             let sprinting = c.run && self.stamina[i].has_stamina();
+            // 회복 정책(KB-53): 스프린트=소모, 걷기(이동 입력 thrust≠0)=유지,
+            // **자의적 이동 입력이 없을 때(가만히=쉬기)만 회복**. 회전만 하는 것은 이동으로
+            // 치지 않아 회복 가능(제자리 조준 허용).
             if sprinting {
                 self.stamina[i].drain(DT);
-            } else {
+            } else if c.thrust == 0.0 {
                 self.stamina[i].regen(DT);
             }
             let speed_cap = if sprinting { st.sprint_speed } else { st.max_speed };
@@ -1060,6 +1063,56 @@ mod tests {
         assert!(
             sp <= 5.5,
             "스태미나 소진 후 run:true를 유지해도 walk(max_speed)로 자동 폴백해야 함 (got {sp})"
+        );
+    }
+
+    #[test]
+    fn stamina_recovers_only_when_idle_not_while_walking() {
+        use crate::parts::StatSet;
+        let runner = StatSet {
+            max_speed: 5.0,
+            accel: 50.0,
+            turn_rate: 1.0,
+            mass: 1.0,
+            sprint_speed: 10.0,
+            stamina_max: 1.0,
+            stamina_regen: 1.0, // 초당 1.0 회복
+            ..Default::default()
+        };
+        let mut w =
+            PhysicsWorld::new_kickoff_with([runner, runner], [String::new(), String::new()]);
+        // 충돌 배제: 서로 다른 레인(y)에 평행 배치, 같은 입력이라도 안 부딪힘.
+        w.set_robot_for_test(0, vector![-4.0, -2.0], 0.0);
+        w.set_robot_for_test(1, vector![-4.0, 2.0], 0.0);
+
+        // 스프린트로 일부 소모.
+        let run = [ControlOutput { thrust: 1.0, turn: 0.0, run: true, kick: false }; 2];
+        for _ in 0..30 {
+            w.step(&run);
+        }
+        let after_sprint = w.snapshot().robots[0].stamina;
+        assert!(after_sprint < 1.0, "스프린트로 소모돼야 함 (got {after_sprint})");
+
+        // 걷기(이동 입력 있음, run=false) → 회복하지 않고 유지.
+        let walk = [ControlOutput { thrust: 1.0, turn: 0.0, run: false, kick: false }; 2];
+        for _ in 0..60 {
+            w.step(&walk);
+        }
+        let after_walk = w.snapshot().robots[0].stamina;
+        assert!(
+            (after_walk - after_sprint).abs() < 1e-3,
+            "걷는 중엔 회복하지 않아야 함 (sprint {after_sprint} → walk {after_walk})"
+        );
+
+        // 멈춤(이동 입력 없음) → 회복.
+        let idle = [ControlOutput { thrust: 0.0, turn: 0.0, run: false, kick: false }; 2];
+        for _ in 0..60 {
+            w.step(&idle);
+        }
+        let after_idle = w.snapshot().robots[0].stamina;
+        assert!(
+            after_idle > after_walk + 0.1,
+            "가만히 있으면 회복해야 함 (walk {after_walk} → idle {after_idle})"
         );
     }
 

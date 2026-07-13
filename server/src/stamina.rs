@@ -3,7 +3,8 @@
 //! 구현은 그중 "걷기/달리기" 부분만).
 //!
 //! 단위: `current`/`max`는 "달리기 가능 초"와 같은 축(즉 drain은 dt를 그대로 차감).
-//! `regen`은 초당 회복량(스탯 `stamina_regen`)이며, 달리지 않을 때만 적용된다.
+//! `regen`은 초당 회복량(스탯 `stamina_regen`). 적용 정책(KB-53)은 `apply_controls`에
+//! 있다: 스프린트=소모, 걷기(이동 입력)=유지, **가만히(이동 입력 없음)=회복**.
 
 /// 로봇 1대의 스태미나 상태. `current` ∈ [0, max].
 #[derive(Clone, Copy, Debug)]
@@ -42,7 +43,7 @@ impl StaminaState {
         self.current = (self.current - dt.max(0.0)).max(0.0);
     }
 
-    /// 달리지 않는 동안 매 tick 호출: regen×dt만큼 회복(max 상한).
+    /// 회복 조건(가만히 있을 때) 충족 시 매 tick 호출: regen×dt만큼 회복(max 상한).
     pub fn regen(&mut self, dt: f32) {
         self.current = (self.current + self.regen * dt.max(0.0)).min(self.max);
     }
