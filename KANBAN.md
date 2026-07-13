@@ -47,7 +47,7 @@
 _(비어 있음 — Plan 3b 착수 시 채움)_
 
 ## In Progress
-_(비어 있음)_
+- [ ] KB-51 UI 비주얼 디자인 — 미드나잇 프리시전 콘솔(크롬) + Neon Telemetry Arena(게임화면). 방향·시안 확정([ADR-014](docs/07-결정기록-ADR.md), 독립 리뷰어 2패널), 실제 클라 적용 중(index.html/render.ts/HUD 배선; 기능 불변)
 
 ## Done
 **Plan 7a — 넷코드 견고성 시연 ✅** (branch `feat/interactivity`)
