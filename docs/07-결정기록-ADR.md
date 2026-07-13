@@ -126,6 +126,7 @@
   - 프로토콜: `input.kick`(bool, 구현) 추가, `st.shoot_lock`(이미 문서화되어 있던 태그) 실사용 시작.
   - `world.rs`(`ControlOutput.kick`), `session.rs`(파싱), `physics.rs`(`prev_kick`/`kick_cd`/`apply_kicks`/스냅샷), `client/src/input.ts`(Space 키).
   - **YAGNI로 제외**: 홀드 차징(`shootCharge`)·공중볼/높이·커브·태클/점프 — 후속 슬라이스 후보로만 남김.
+- **구현 addendum (KB-52)**: AI(`ChaseBallAi`)도 슛한다 — 공이 정면 사거리(0.85m) 안 + 정면이 상대 골 방향으로 정렬됐을 때만(자책골 방지). 초기 "AI 킥 없음"(YAGNI) 결정을 갱신(차기가 생긴 이상 AI도 쏴야 대칭). 상대 골 방향은 팀으로 결정(블루=+x/레드=−x, `check_goal` 규약).
 
 ## ADR-014 — UI/비주얼 디자인 방향(미드나잇 프리시전 콘솔 + Neon Telemetry Arena)
 - **상태**: 확정 (KB-51). 정적 시안 승인, 실제 클라 적용 진행.

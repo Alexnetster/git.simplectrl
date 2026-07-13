@@ -26,10 +26,43 @@ const STUCK_LIMIT: u32 = 60;
 /// 탈출 기동 지속(프레임=~0.66초).
 const ESCAPE_FRAMES: u32 = 40;
 
+/// AI 슛 판정(KB-52). 공이 이 거리(m) 안(서버 사거리 0.9보다 안쪽)이고,
+/// 정면 콘 안이며, 상대 골 방향으로 정렬됐을 때만 찬다(자책골 방지).
+const AI_KICK_RANGE: f32 = 0.85;
+const AI_KICK_FRONT_COS: f32 = 0.5; // 공이 정면 ~60° 이내
+const AI_KICK_GOAL_COS: f32 = 0.55; // 상대 골 방향 ~57° 이내(정렬됐을 때만 슛)
+
 impl ChaseBallAi {
     /// 필드 중앙(y=0) 쪽으로 도는 turn 부호. 위쪽(+y) 벽이면 CW로 내려오게.
     fn escape_turn(pos_y: f32) -> f32 {
         if pos_y >= 0.0 { -1.0 } else { 1.0 }
+    }
+
+    /// 상대 골 x좌표. 블루는 +x, 레드는 −x로 공격(physics::check_goal과 동일 규약).
+    fn enemy_goal_x(team: Team) -> f32 {
+        match team {
+            Team::Blue => FIELD_W / 2.0,
+            Team::Red => -FIELD_W / 2.0,
+        }
+    }
+
+    /// 공이 정면 사거리 안 + 정면이 상대 골 방향으로 정렬 → 슛(자책골 회피).
+    fn wants_kick(view: &GameView) -> bool {
+        let (fx, fy) = (view.me.rot.cos(), view.me.rot.sin());
+        let bdx = view.ball.pos.x - view.me.pos.x;
+        let bdy = view.ball.pos.y - view.me.pos.y;
+        let bdist = (bdx * bdx + bdy * bdy).sqrt();
+        if bdist > AI_KICK_RANGE {
+            return false;
+        }
+        // 공이 정면 콘 안(거리≈0이면 정면으로 간주).
+        let ball_front = bdist <= 1e-6 || (fx * bdx + fy * bdy) / bdist >= AI_KICK_FRONT_COS;
+        // 정면이 상대 골 방향으로 정렬(자책골 방지).
+        let gdx = Self::enemy_goal_x(view.me.id) - view.me.pos.x;
+        let gdy = -view.me.pos.y;
+        let gdist = (gdx * gdx + gdy * gdy).sqrt();
+        let goalward = gdist <= 1e-6 || (fx * gdx + fy * gdy) / gdist >= AI_KICK_GOAL_COS;
+        ball_front && goalward
     }
 
     /// 후진하며 중앙 쪽으로 회전(벽에서 멀어짐).
@@ -84,8 +117,9 @@ impl Controller for ChaseBallAi {
             turn: diff.clamp(-1.0, 1.0),
             // AI는 달리기를 쓰지 않는다(KB-45 YAGNI: AI sprint 없음).
             run: false,
-            // AI는 차기를 쓰지 않는다(KB-48 YAGNI: AI 킥 없음).
-            kick: false,
+            // 슛(KB-52): 정면 사거리 안 + 상대 골 정렬 시에만. 서버가 상승엣지로 1회
+            // 발사하므로, 사거리 안에서 kick=true를 유지해도 재발사는 쿨다운/엣지가 관리.
+            kick: Self::wants_kick(view),
         }
     }
 }
@@ -151,6 +185,42 @@ mod tests {
             }
         }
         assert!(escaped, "정지 지속 시 후진 탈출 기동이 나와야 함");
+    }
+
+    fn view_at(team: Team, pos: Vec2, rot: f32, ball: Vec2) -> (RobotState, BallState) {
+        (
+            RobotState {
+                id: team, pos, rot, vel: Vec2 { x: 0.0, y: 0.0 },
+                robot: String::new(), parts: Vec::new(),
+                down: Down::default(), st: Vec::new(), stamina: 1.0,
+            },
+            BallState { pos: ball, vel: Vec2 { x: 0.0, y: 0.0 } },
+        )
+    }
+
+    /// 공이 정면 사거리 안이고 상대 골(블루=+x) 방향으로 정렬되면 슛(KB-52).
+    #[test]
+    fn ai_kicks_when_ball_in_front_toward_enemy_goal() {
+        let (me, ball) = view_at(Team::Blue, Vec2 { x: 0.0, y: 0.0 }, 0.0, Vec2 { x: 0.6, y: 0.0 });
+        let mut ai = ChaseBallAi::default();
+        assert!(ai.decide(&GameView { me: &me, ball: &ball }).kick, "정렬+사거리 내 → 슛");
+    }
+
+    /// 정면이 자기 골 쪽이면(상대 골 반대) 사거리·정면이어도 안 참(자책골 방지).
+    #[test]
+    fn ai_does_not_kick_toward_own_goal() {
+        // 블루가 −x(자기 골)를 향한 채 앞의 공을 참 → 상대 골 정렬 실패로 무슛.
+        let (me, ball) = view_at(Team::Blue, Vec2 { x: 0.0, y: 0.0 }, std::f32::consts::PI, Vec2 { x: -0.6, y: 0.0 });
+        let mut ai = ChaseBallAi::default();
+        assert!(!ai.decide(&GameView { me: &me, ball: &ball }).kick, "자기 골 방향이면 무슛");
+    }
+
+    /// 공이 사거리 밖이면 안 참.
+    #[test]
+    fn ai_does_not_kick_when_ball_far() {
+        let (me, ball) = view_at(Team::Blue, Vec2 { x: 0.0, y: 0.0 }, 0.0, Vec2 { x: 3.0, y: 0.0 });
+        let mut ai = ChaseBallAi::default();
+        assert!(!ai.decide(&GameView { me: &me, ball: &ball }).kick, "사거리 밖 무슛");
     }
 
     /// 정상 주행(속도 충분)에서는 스턱 판정이 되지 않아야 한다(오탐 방지).
