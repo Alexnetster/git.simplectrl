@@ -126,6 +126,9 @@ pub fn catalog() -> Catalog {
             // 스태미나 용량/회복(몸통이 주 기여, KB-45). 3초분, ~4초에 완전 회복.
             stamina_max: 3.0,
             stamina_regen: 0.75,
+            // 차기 세기(KB-48 실배선). guard는 몸통이 무겁고 안정형이라 striker보다
+            // 약간 낮게(짧은 패스 수준). 플레이테스트 튜닝 대상.
+            kick_power: 9.0,
             ..Default::default()
         },
     );
@@ -141,6 +144,9 @@ pub fn catalog() -> Catalog {
             // 가벼운 몸통은 스태미나 용량은 약간 적지만 회복은 더 빠름.
             stamina_max: 2.5,
             stamina_regen: 0.85,
+            // 차기 세기(KB-48 실배선). striker는 민첩형이라 강킥(필드를 가로지를 만큼).
+            // 플레이테스트 튜닝 대상.
+            kick_power: 12.0,
             ..Default::default()
         },
     );
@@ -263,5 +269,22 @@ mod tests {
                 s.max_speed
             );
         }
+    }
+
+    /// kick_power 실배선(KB-48): 프리셋마다 양수여야 하고, striker(민첩/강킥)가
+    /// guard(약간 낮게)보다 커야 한다는 카탈로그 의도를 회귀 방지로 고정.
+    #[test]
+    fn shipped_presets_have_positive_asymmetric_kick_power() {
+        let cat = catalog();
+        let striker = aggregate(&cat, "striker");
+        let guard = aggregate(&cat, "guard");
+        assert!(striker.kick_power > 0.0);
+        assert!(guard.kick_power > 0.0);
+        assert!(
+            striker.kick_power > guard.kick_power,
+            "striker({})가 guard({})보다 강킥이어야 함",
+            striker.kick_power,
+            guard.kick_power
+        );
     }
 }

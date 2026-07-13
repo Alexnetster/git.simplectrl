@@ -32,6 +32,8 @@ impl Controller for ChaseBallAi {
             turn: diff.clamp(-1.0, 1.0),
             // AI는 달리기를 쓰지 않는다(KB-45 YAGNI: AI sprint 없음).
             run: false,
+            // AI는 차기를 쓰지 않는다(KB-48 YAGNI: AI 킥 없음).
+            kick: false,
         }
     }
 }

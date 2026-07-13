@@ -21,6 +21,22 @@ mod groups {
 }
 
 /// 로봇 부위 수. 부위별 자식 콜라이더(복합 바디)로 구성.
+/// 차기(킥, KB-48) 튜닝 상수. 결정적 순수 계산에만 쓰임(I/O·RNG 없음).
+mod kick {
+    /// 정면 사거리(로봇 반경+공 반경+여유). 대략 0.9m 근방(튜닝 대상).
+    pub const RANGE: f32 = 0.9;
+    /// 정면 콘 반각 75°의 cos값. dot(facing, unit(ball-robot)) ≥ 이 값이어야 유효.
+    pub const CONE_COS: f32 = 0.258_819_05; // cos(75°)
+    /// 좌우 조준 오프셋(라디안). 0.61rad ≈ 35°.
+    pub const AIM: f32 = 0.61;
+    /// 쿨다운(초).
+    pub const CD: f32 = 0.45;
+    /// 세기 3단(상하 입력 기준). 최종 임펄스 크기 = 레벨 × kick_power.
+    pub const STRONG: f32 = 1.0; // thrust>0(↑)
+    pub const MID: f32 = 0.75; // thrust==0
+    pub const WEAK: f32 = 0.5; // thrust<0(↓)
+}
+
 const NUM_PARTS: usize = 3;
 /// 부위명(스냅샷 `parts`용). PART_SHAPES/PART_HP_WEIGHT와 index 정합.
 const PART_NAMES: [&str; NUM_PARTS] = ["body", "foreleg", "hindleg"];
@@ -84,6 +100,10 @@ pub struct PhysicsWorld {
     combat: Vec<CombatState>,
     /// 로봇별 스태미나 상태(결정적 순수 로직 stamina.rs, KB-45).
     stamina: Vec<StaminaState>,
+    /// 차기(킥, KB-48): 직전 스텝의 `kick` 입력값(상승엣지 판정용).
+    prev_kick: Vec<bool>,
+    /// 차기 쿨다운 잔여초(로봇별). >0인 동안 재발사 불가·스냅샷 "shoot_lock".
+    kick_cd: Vec<f32>,
     pub score: (u32, u32),
     pub time: f32,
 }
@@ -240,6 +260,7 @@ impl PhysicsWorld {
             );
         }
 
+        let n = robots.len();
         PhysicsWorld {
             bodies,
             colliders,
@@ -263,6 +284,8 @@ impl PhysicsWorld {
             part_map,
             combat,
             stamina,
+            prev_kick: vec![false; n],
+            kick_cd: vec![0.0; n],
             score: (0, 0),
             time: 0.0,
         }
@@ -306,8 +329,66 @@ impl PhysicsWorld {
         }
     }
 
+    /// 차기(킥, KB-48). 로봇별 `kick` 입력의 **false→true 상승엣지**에서만 1회 발사
+    /// (홀드해도 반복 없음). 조건: 다운/스턴 아님(apply_controls와 동일 게이팅),
+    /// 쿨다운 없음, 공이 정면 부채꼴 사거리 안(거리 ≤ RANGE, 정면 콘 CONE_COS 이내).
+    /// 세기(상하 3단)×방향(좌우 ±AIM)은 그 순간의 이동입력으로 결정, 최종 크기는
+    /// 레벨 × 로봇 kick_power(로드아웃 집계). 순수 계산 + rapier 임펄스 적용만(I/O 없음).
+    fn apply_kicks(&mut self, controls: &[ControlOutput]) {
+        let ball_pos = *self.bodies[self.ball].translation();
+        for (i, c) in controls.iter().enumerate() {
+            // 다운/스턴 로봇은 킥도 무동작(apply_controls와 동일 게이팅). 엣지 상태(prev_kick)도
+            // 갱신하지 않는다 — 행동불능 중 눌린 입력은 존재하지 않았던 것으로 취급.
+            if self.combat[i].broken() || self.combat[i].stunned() {
+                continue;
+            }
+            let rising = c.kick && !self.prev_kick[i];
+            self.prev_kick[i] = c.kick;
+            if !rising || self.kick_cd[i] > 0.0 {
+                continue;
+            }
+            // 로봇 translation/rotation을 먼저 복사(이 스코프 밖에서 self.bodies를
+            // 다시 가변 인덱싱해야 하므로 불변 대여를 여기서 끝낸다).
+            let (pos, rot) = {
+                let rb = &self.bodies[self.robots[i]];
+                (*rb.translation(), rb.rotation().angle())
+            };
+            let to_ball = ball_pos - pos;
+            let dist = (to_ball.x * to_ball.x + to_ball.y * to_ball.y).sqrt();
+            if dist > kick::RANGE || dist < 1e-6 {
+                continue; // 사거리 밖(또는 완전히 겹침, 방향 미정)
+            }
+            let facing = vector![rot.cos(), rot.sin()];
+            let unit_to_ball = vector![to_ball.x / dist, to_ball.y / dist];
+            let dot = facing.x * unit_to_ball.x + facing.y * unit_to_ball.y;
+            if dot < kick::CONE_COS {
+                continue; // 정면 콘 밖
+            }
+            let level = if c.thrust > 0.0 {
+                kick::STRONG
+            } else if c.thrust < 0.0 {
+                kick::WEAK
+            } else {
+                kick::MID
+            };
+            let aim = if c.turn > 0.0 {
+                kick::AIM
+            } else if c.turn < 0.0 {
+                -kick::AIM
+            } else {
+                0.0
+            };
+            let kick_angle = rot + aim;
+            let dir = vector![kick_angle.cos(), kick_angle.sin()];
+            let magnitude = level * self.stats[i].kick_power;
+            self.bodies[self.ball].apply_impulse(dir * magnitude, true);
+            self.kick_cd[i] = kick::CD;
+        }
+    }
+
     pub fn step(&mut self, controls: &[ControlOutput]) {
         self.apply_controls(controls);
+        self.apply_kicks(controls);
         // 충돌 이벤트 채널: collision + (미사용) contact-force 둘 다 필요(rapier 재수출).
         let (cs, cr) = rapier2d::crossbeam::channel::unbounded();
         let (fs, _fr) = rapier2d::crossbeam::channel::unbounded();
@@ -330,6 +411,10 @@ impl PhysicsWorld {
         self.apply_collision_damage(&cr);
         for c in &mut self.combat {
             c.tick_status();
+        }
+        // 차기 쿨다운(KB-48): 매 스텝 DT만큼 감소, 0 클램프.
+        for cd in &mut self.kick_cd {
+            *cd = (*cd - DT).max(0.0);
         }
         self.check_goal();
         self.time += DT;
@@ -511,6 +596,9 @@ impl PhysicsWorld {
                 if cs.stunned() {
                     st.push("stun".to_string());
                 }
+                if self.kick_cd[i] > 0.0 {
+                    st.push("shoot_lock".to_string());
+                }
                 RobotState {
                     id: if i == 0 { Team::Blue } else { Team::Red },
                     pos: to_vec2(rb.translation()),
@@ -598,7 +686,7 @@ mod tests {
         // 서로를 향해 돌진(robot0 +x, robot1 -x)
         let toward = [ControlOutput {
             thrust: 1.0,
-            turn: 0.0, run: false,
+            turn: 0.0, run: false, kick: false,
         }; 2];
         for _ in 0..120 {
             w.step(&toward);
@@ -638,7 +726,7 @@ mod tests {
         w.set_robot_for_test(1, vector![0.4, 0.0], std::f32::consts::PI);
         let toward = [ControlOutput {
             thrust: 1.0,
-            turn: 0.0, run: false,
+            turn: 0.0, run: false, kick: false,
         }; 2];
         let mut stunned_seen = false;
         let mut max_speed_seen: f32 = 0.0;
@@ -683,7 +771,7 @@ mod tests {
         let before = (w.hp_ratio_min(0), w.hp_ratio_min(1));
         let toward = [ControlOutput {
             thrust: 1.0,
-            turn: 0.0, run: false,
+            turn: 0.0, run: false, kick: false,
         }; 2];
         for _ in 0..120 {
             w.step(&toward);
@@ -712,7 +800,7 @@ mod tests {
         w.set_robot_for_test(1, vector![0.4, 0.0], std::f32::consts::PI);
         let toward = [ControlOutput {
             thrust: 1.0,
-            turn: 0.0, run: false,
+            turn: 0.0, run: false, kick: false,
         }; 2];
         let mut stunned_seen = false;
         let mut max_speed_seen: f32 = 0.0;
@@ -749,7 +837,7 @@ mod tests {
             w.step(&[
                 ControlOutput {
                     thrust: 1.0,
-                    turn: 0.0, run: false,
+                    turn: 0.0, run: false, kick: false,
                 },
                 ControlOutput::default(),
             ]);
@@ -774,7 +862,7 @@ mod tests {
             w.step(&[
                 ControlOutput {
                     thrust: 1.0,
-                    turn: 0.0, run: false,
+                    turn: 0.0, run: false, kick: false,
                 },
                 ControlOutput::default(),
             ]);
@@ -803,7 +891,7 @@ mod tests {
             w.step(&[
                 ControlOutput {
                     thrust: 1.0,
-                    turn: 0.0, run: false,
+                    turn: 0.0, run: false, kick: false,
                 },
                 ControlOutput::default(),
             ]);
@@ -911,7 +999,7 @@ mod tests {
             PhysicsWorld::new_kickoff_with([slow, slow], [String::new(), String::new()]);
         let fwd = [ControlOutput {
             thrust: 1.0,
-            turn: 0.0, run: false,
+            turn: 0.0, run: false, kick: false,
         }; 2];
         for _ in 0..120 {
             w.step(&fwd);
@@ -941,6 +1029,7 @@ mod tests {
             thrust: 1.0,
             turn: 0.0,
             run: true,
+            kick: false,
         }; 2];
         let mut max_speed_seen: f32 = 0.0;
         for _ in 0..20 {
@@ -986,11 +1075,11 @@ mod tests {
         let fwd = [
             ControlOutput {
                 thrust: 1.0,
-                turn: 0.0, run: false,
+                turn: 0.0, run: false, kick: false,
             },
             ControlOutput {
                 thrust: 1.0,
-                turn: 0.0, run: false,
+                turn: 0.0, run: false, kick: false,
             },
         ];
         let x0 = w
@@ -1018,7 +1107,7 @@ mod tests {
         let toward = [
             ControlOutput {
                 thrust: 1.0,
-                turn: 0.0, run: false,
+                turn: 0.0, run: false, kick: false,
             },
             ControlOutput::default(),
         ];
@@ -1085,5 +1174,115 @@ mod tests {
         }
         // 골 입구 밖이라 벽에 막혀 무득점
         assert_eq!(w.score, (0, 0), "골 입구 밖으로 나가면 무득점이어야 함");
+    }
+
+    /// 킥 테스트 공용 스탯: 이동은 거의 영향 없게, kick_power만 지정.
+    fn kicker_stats(kick_power: f32) -> StatSet {
+        StatSet {
+            max_speed: 5.0,
+            accel: 5.0,
+            turn_rate: 3.0,
+            mass: 1.0,
+            kick_power,
+            ..Default::default()
+        }
+    }
+
+    /// 로봇0을 원점(정면=+x)에 놓고, 공을 정면 사거리 안(0.5m)에 정지 배치한 킥 테스트용 월드.
+    fn kick_test_world(kick_power: f32) -> PhysicsWorld {
+        let mut w = PhysicsWorld::new_kickoff_with(
+            [kicker_stats(kick_power), StatSet::default()],
+            [String::new(), String::new()],
+        );
+        w.set_robot_for_test(0, vector![0.0, 0.0], 0.0);
+        w.set_ball_for_test(vector![0.5, 0.0], vector![0.0, 0.0]);
+        w
+    }
+
+    fn kick_input(thrust: f32, turn: f32) -> [ControlOutput; 2] {
+        [
+            ControlOutput {
+                thrust,
+                turn,
+                run: false,
+                kick: true,
+            },
+            ControlOutput::default(),
+        ]
+    }
+
+    fn speed(v: Vec2) -> f32 {
+        (v.x * v.x + v.y * v.y).sqrt()
+    }
+
+    #[test]
+    fn kick_launches_ball_when_in_front_range() {
+        let mut w = kick_test_world(2.0);
+        w.step(&kick_input(0.0, 0.0));
+        let v = w.snapshot().ball.vel;
+        assert!(speed(v) > 0.5, "정면 사거리 내 킥은 공을 발사해야 함 (got {v:?})");
+        assert!(v.x > 0.0, "정면(+x) 성분이 양수여야 함 (got {v:?})");
+    }
+
+    #[test]
+    fn kick_ignored_when_ball_out_of_range() {
+        let mut w = kick_test_world(2.0);
+        // 사거리(0.9m) 밖으로 공을 멀리 재배치.
+        w.set_ball_for_test(vector![5.0, 0.0], vector![0.0, 0.0]);
+        w.step(&kick_input(0.0, 0.0));
+        let v = w.snapshot().ball.vel;
+        assert!(speed(v) < 1e-6, "사거리 밖이면 공 속도가 불변해야 함 (got {v:?})");
+    }
+
+    #[test]
+    fn kick_power_scales_with_thrust_level() {
+        let mut w_strong = kick_test_world(2.0);
+        w_strong.step(&kick_input(1.0, 0.0)); // thrust>0(↑) = 강(1.0)
+        let v_strong = w_strong.snapshot().ball.vel;
+
+        let mut w_weak = kick_test_world(2.0);
+        w_weak.step(&kick_input(-1.0, 0.0)); // thrust<0(↓) = 약(0.5)
+        let v_weak = w_weak.snapshot().ball.vel;
+
+        assert!(
+            speed(v_strong) > speed(v_weak),
+            "thrust>0(강)은 thrust<0(약)보다 세야 함 (strong {} weak {})",
+            speed(v_strong),
+            speed(v_weak)
+        );
+    }
+
+    #[test]
+    fn kick_direction_offset_by_turn() {
+        let mut w = kick_test_world(2.0);
+        w.step(&kick_input(0.0, 1.0)); // turn>0(←) = 정면 기준 좌(+AIM)
+        let v = w.snapshot().ball.vel;
+        assert!(v.y > 0.0, "turn>0(←)은 정면 기준 좌(+y)로 치우쳐야 함 (got {v:?})");
+    }
+
+    #[test]
+    fn kick_edge_triggered_once() {
+        let mut w = kick_test_world(2.0);
+        let hold = kick_input(0.0, 0.0);
+        w.step(&hold);
+        let v1 = w.snapshot().ball.vel;
+        assert!(speed(v1) > 0.0, "1스텝째는 발사되어야 함 (got {v1:?})");
+        // 공을 원위치·무속도로 되돌리되(사거리/정면 조건은 유지), kick:true는 계속 홀드.
+        w.set_ball_for_test(vector![0.5, 0.0], vector![0.0, 0.0]);
+        w.step(&hold);
+        let v2 = w.snapshot().ball.vel;
+        assert!(
+            speed(v2) < 1e-6,
+            "kick을 홀드해도 2번째 스텝엔 추가 발사(가속)가 없어야 함 (got {v2:?})"
+        );
+    }
+
+    #[test]
+    fn kick_blocked_when_stunned() {
+        let mut w = kick_test_world(2.0);
+        w.force_stun_for_test(0, 1.0);
+        w.step(&kick_input(0.0, 0.0));
+        let v = w.snapshot().ball.vel;
+        assert!(speed(v) < 1e-6, "스턴 중엔 킥이 무동작이어야 함 (got {v:?})");
     }
 }

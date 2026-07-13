@@ -1,15 +1,15 @@
 import { send } from "./net";
 
-/** 현재 눌린 키 상태. (01-UX §3: ↑↓ 이동, ←→ 회전 — 이동/회전 우선, 슛 등은 후속) */
-const keys = { up: false, down: false, left: false, right: false, shift: false };
+/** 현재 눌린 키 상태. (01-UX §3: ↑↓ 이동, ←→ 회전, Space=차기(KB-48) — 모드리스 탭) */
+const keys = { up: false, down: false, left: false, right: false, shift: false, space: false };
 
-type InputState = { fwd: boolean; back: boolean; turn: -1 | 0 | 1; run: boolean };
+type InputState = { fwd: boolean; back: boolean; turn: -1 | 0 | 1; run: boolean; kick: boolean };
 let lastSent: InputState | null = null;
 
 function computeInput(): InputState {
   // turn: ←=+1(좌회전), →=-1(우회전). 둘 다 눌리면 상쇄(0).
   const turn: -1 | 0 | 1 = keys.left === keys.right ? 0 : keys.left ? 1 : -1;
-  return { fwd: keys.up, back: keys.down, turn, run: keys.shift };
+  return { fwd: keys.up, back: keys.down, turn, run: keys.shift, kick: keys.space };
 }
 
 function sendIfChanged(): void {
@@ -19,10 +19,18 @@ function sendIfChanged(): void {
     cur.fwd !== lastSent.fwd ||
     cur.back !== lastSent.back ||
     cur.turn !== lastSent.turn ||
-    cur.run !== lastSent.run
+    cur.run !== lastSent.run ||
+    cur.kick !== lastSent.kick
   ) {
     lastSent = cur;
-    send({ t: "input", fwd: cur.fwd, back: cur.back, turn: cur.turn, run: cur.run });
+    send({
+      t: "input",
+      fwd: cur.fwd,
+      back: cur.back,
+      turn: cur.turn,
+      run: cur.run,
+      kick: cur.kick,
+    });
   }
 }
 
@@ -42,6 +50,12 @@ function handleKey(e: KeyboardEvent, pressed: boolean): void {
       break;
     case "Shift":
       keys.shift = pressed;
+      break;
+    case " ":
+    case "Spacebar": // 구형 브라우저 호환
+      keys.space = pressed;
+      // Space의 기본 동작(페이지 스크롤)을 막는다.
+      e.preventDefault();
       break;
     default:
       return;

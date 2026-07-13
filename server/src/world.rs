@@ -74,6 +74,9 @@ pub struct ControlOutput {
     pub turn: f32, // -1..1
     /// 달리기(Shift 홀드) 요청(KB-45). AI는 항상 false(달리기 미사용, YAGNI).
     pub run: bool,
+    /// 차기(킥) 요청(KB-48, 모드리스 탭). 서버가 로봇별 이전 값과 비교해
+    /// **false→true 상승엣지에서만** 1회 발사(홀드해도 반복 없음). AI는 항상 false.
+    pub kick: bool,
 }
 
 impl GameState {

@@ -31,11 +31,14 @@ pub fn parse_uplink(s: &str) -> Option<Uplink> {
             let back = v.get("back").and_then(Value::as_bool).unwrap_or(false);
             let turn = v.get("turn").and_then(Value::as_f64).unwrap_or(0.0) as f32;
             let run = v.get("run").and_then(Value::as_bool).unwrap_or(false);
+            // 차기(KB-48): 모드리스 탭 발사 플래그. 기본 false(미지정 시 발사 없음).
+            let kick = v.get("kick").and_then(Value::as_bool).unwrap_or(false);
             let thrust = if fwd { 1.0 } else if back { -1.0 } else { 0.0 };
             Some(Uplink::Input(ControlOutput {
                 thrust,
                 turn: turn.clamp(-1.0, 1.0),
                 run,
+                kick,
             }))
         }
         "leave" => Some(Uplink::Leave),
@@ -72,6 +75,23 @@ mod tests {
         let u = parse_uplink(r#"{"t":"input","fwd":true,"turn":0,"run":true}"#);
         if let Some(Uplink::Input(out)) = u {
             assert!(out.run, "run:true가 파싱되어야 함");
+        } else {
+            panic!("input 파싱 실패");
+        }
+    }
+
+    #[test]
+    fn parses_kick_flag_on_input_uplink() {
+        let u = parse_uplink(r#"{"t":"input","fwd":true,"turn":0,"kick":true}"#);
+        if let Some(Uplink::Input(out)) = u {
+            assert!(out.kick, "kick:true가 파싱되어야 함");
+        } else {
+            panic!("input 파싱 실패");
+        }
+        // 미지정 시 기본 false
+        let u2 = parse_uplink(r#"{"t":"input","fwd":true,"turn":0}"#);
+        if let Some(Uplink::Input(out)) = u2 {
+            assert!(!out.kick, "kick 미지정 시 기본 false");
         } else {
             panic!("input 파싱 실패");
         }

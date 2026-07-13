@@ -183,6 +183,7 @@ mod tests {
                 thrust: 1.0,
                 turn: 0.5,
                 run: false,
+                kick: false,
             }),
             1,
         );
@@ -219,6 +220,7 @@ mod tests {
                 thrust: -1.0,
                 turn: -1.0,
                 run: false,
+                kick: false,
             }),
             2,
         );
@@ -242,6 +244,7 @@ mod tests {
                 thrust: 1.0,
                 turn: 0.0,
                 run: false,
+                kick: false,
             }),
             1,
         );

@@ -49,6 +49,9 @@ _(비어 있음 — Plan 3b 착수 시 채움)_
 _(비어 있음)_
 
 ## Done
+**플레이테스트 후속 ✅** (branch `feat/interactivity`)
+- [x] KB-48 차기(kick) 풀스택 — 탭 발사·세기(↑↓)·방향(←→)·로봇별 kick_power·정면 사거리·shoot_lock 쿨다운 (테스트: cargo test 통과, warning 0, 클라 빌드)
+
 **플레이테스트 후속 — 필드/체력 ✅** (branch `feat/interactivity`)
 - [x] KB-43 골 입구 펜스(GOALFENCE 충돌그룹): 로봇은 막히고 공은 통과
 - [x] KB-44 코너 45° 챔퍼: 공이 구석에 끼는 문제 완화

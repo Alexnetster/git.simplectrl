@@ -57,6 +57,7 @@ mod tests {
             thrust: 1.0,
             turn: -1.0,
             run: false,
+            kick: false,
         });
         let (robot, ball) = dummy_view();
         let out = hc.decide(&GameView {
