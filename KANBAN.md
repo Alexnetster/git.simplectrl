@@ -44,7 +44,9 @@
 - (Plan 4a 후속) **`Controller::as_any_mut`(Any 다운캐스트) → Plan 4b에서 슬롯 상태 늘면 `SlotController` enum으로 리팩터** / mpsc 백프레셔 없음(하드닝 시) / **브라우저 시각검증 미완**(회전방향 ←=CCW·HP바·스턴/다운 렌더·상대와 충돌 시 라이브 전투 — 사용자가 `cargo run`+`npm run dev`로 확인)
 
 ## Todo
-_(비어 있음 — Plan 3b 착수 시 채움)_
+- [ ] KB-60 방어형 범위 확대 + 공 인지 빠르게 — DefenderAi가 공을 늦게 인지하고 방어 범위가 좁음. `DEFENDER_GUARD_DIST`(2.5m) 상향 + 자기 진영 접근을 이르게 감지해 나가 막기 (사용자 요청, 내일 진행)
+- [ ] 밸런스 결정 — striker가 guard와 몸싸움서 항상 밀림(의도된 비대칭). 유지/guard약화/대칭 중 택 (미정)
+- [ ] 다리로 슛 연출(앞다리 차는 애니, 클라 렌더)
 
 ## In Progress
 _(비어 있음)_
